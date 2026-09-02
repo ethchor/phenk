@@ -185,3 +185,25 @@ func TestEmptyPlaintextRoundTrips(t *testing.T) {
 		t.Fatalf("Open = %q, want empty", got)
 	}
 }
+
+func TestDeriveIsStableDistinctAndKeyBound(t *testing.T) {
+	kr := testKeyring(t)
+
+	a := kr.Derive("image-proxy")
+	if len(a) != KeySize {
+		t.Fatalf("derived key is %d bytes, want %d", len(a), KeySize)
+	}
+	if !bytes.Equal(a, kr.Derive("image-proxy")) {
+		t.Fatal("deriving the same purpose twice gave different keys")
+	}
+	// Different purposes must not share a key, or one subsystem's leak
+	// becomes another's.
+	if bytes.Equal(a, kr.Derive("something-else")) {
+		t.Fatal("two purposes derived the same key")
+	}
+
+	other := testKeyring(t)
+	if bytes.Equal(a, other.Derive("image-proxy")) {
+		t.Fatal("two master keys derived the same subkey")
+	}
+}

@@ -12,7 +12,9 @@ package crypto
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -39,6 +41,10 @@ var (
 // It is safe for concurrent use.
 type Keyring struct {
 	aead cipher.AEAD
+
+	// derivationKey is the master key, kept for Derive. Wrapping uses the
+	// AEAD above rather than this, so the two uses never share a construction.
+	derivationKey []byte
 }
 
 // NewKeyring returns a keyring over a 32-byte master key.
@@ -54,7 +60,7 @@ func NewKeyring(masterKey []byte) (*Keyring, error) {
 	if err != nil {
 		return nil, fmt.Errorf("crypto: master key: %w", err)
 	}
-	return &Keyring{aead: aead}, nil
+	return &Keyring{aead: aead, derivationKey: append([]byte(nil), masterKey...)}, nil
 }
 
 // ParseMasterKey decodes a base64 master key, as it is supplied in the
@@ -198,3 +204,15 @@ func (d *DataKey) Destroy() {
 
 // Destroyed reports whether Destroy has been called.
 func (d *DataKey) Destroyed() bool { return d.aead == nil }
+
+// Derive returns a 32-byte subkey for a named purpose, so parts of the system
+// that need a secret of their own — the image proxy signer, for one — do not
+// need an operator to manage a second one, and cannot be used to attack the
+// master key or each other.
+func (k *Keyring) Derive(purpose string) []byte {
+	// The master key is already a uniformly random 32 bytes, so an HMAC with
+	// it as the key is a sound extractor without a full HKDF extract step.
+	mac := hmac.New(sha256.New, k.derivationKey)
+	mac.Write([]byte("phenk-derive-v1:" + purpose))
+	return mac.Sum(nil)
+}
