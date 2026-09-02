@@ -1,6 +1,7 @@
 package parse
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -126,33 +127,49 @@ func (f *fixture) deliver(name string) core.UUID {
 	return f.deliverRaw(ctx, raw)
 }
 
+// deliverRaw stores a message exactly as the SMTP commit path does: encrypted
+// under a fresh content key, with that key wrapped under the identity's own.
 func (f *fixture) deliverRaw(ctx context.Context, raw []byte) core.UUID {
 	f.t.Helper()
 
-	sha, size, err := f.blobs.Put(ctx, bytesReader(raw))
+	contentKey, rawContentKey, err := crypto.NewContentKey()
+	if err != nil {
+		f.t.Fatalf("NewContentKey: %v", err)
+	}
+	var sealed bytes.Buffer
+	if _, err := contentKey.SealStream(&sealed, bytes.NewReader(raw)); err != nil {
+		f.t.Fatalf("SealStream: %v", err)
+	}
+	wrapped, err := f.dataKey.Seal(rawContentKey)
+	if err != nil {
+		f.t.Fatalf("Seal: %v", err)
+	}
+
+	sha, storedSize, err := f.blobs.Put(ctx, bytes.NewReader(sealed.Bytes()))
 	if err != nil {
 		f.t.Fatalf("Put: %v", err)
 	}
 
 	var deliveryID core.UUID
 	err = f.db.InTx(ctx, func(q pg.Querier) error {
-		blobID, _, err := pg.AcquireBlob(ctx, q, sha, size, f.blobs.Locate(sha))
+		blobID, _, err := pg.AcquireBlob(ctx, q, sha, storedSize, f.blobs.Locate(sha))
 		if err != nil {
 			return err
 		}
-		seq, err := pg.ReserveDeliverySlot(ctx, q, f.identity.ID, size)
+		seq, err := pg.ReserveDeliverySlot(ctx, q, f.identity.ID, int64(len(raw)))
 		if err != nil {
 			return err
 		}
 		d := &core.Delivery{
-			IdentityID:   f.identity.ID,
-			Seq:          seq,
-			BlobID:       blobID,
-			EnvelopeFrom: "sender@example.com",
-			ClientIP:     mustAddr("198.51.100.7"),
-			HELO:         "mail.example.com",
-			SizeBytes:    size,
-			State:        core.DeliveryReceived,
+			IdentityID:        f.identity.ID,
+			Seq:               seq,
+			BlobID:            blobID,
+			EnvelopeFrom:      "sender@example.com",
+			ClientIP:          mustAddr("198.51.100.7"),
+			HELO:              "mail.example.com",
+			SizeBytes:         int64(len(raw)),
+			State:             core.DeliveryReceived,
+			WrappedContentKey: wrapped,
 		}
 		if err := pg.InsertDelivery(ctx, q, d); err != nil {
 			return err

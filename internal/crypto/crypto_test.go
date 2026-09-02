@@ -207,3 +207,5 @@ func TestDeriveIsStableDistinctAndKeyBound(t *testing.T) {
 		t.Fatal("two master keys derived the same subkey")
 	}
 }
+
+func newTestUUID() core.UUID { return core.NewUUID() }

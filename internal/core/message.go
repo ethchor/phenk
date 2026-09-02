@@ -75,6 +75,13 @@ type Delivery struct {
 	State      DeliveryState
 	ReceivedAt time.Time
 	ParsedAt   *time.Time
+
+	// WrappedContentKey is the blob's content key, wrapped under this
+	// identity's data key. The blob itself is shared between everyone who
+	// received the same message; this is what makes each recipient's access to
+	// it separately revocable, so purging one identity does not have to
+	// destroy another's copy.
+	WrappedContentKey []byte
 }
 
 // ParsedMessage is derived output. It is always rebuildable from the raw blob,

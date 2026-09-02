@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethchor/phenk/internal/alloc"
 	"github.com/ethchor/phenk/internal/core"
+	"github.com/ethchor/phenk/internal/crypto"
 	"github.com/ethchor/phenk/internal/store/blob"
 	"github.com/ethchor/phenk/internal/store/pg"
 )
@@ -90,6 +91,7 @@ type storeReceiver struct {
 	db        *pg.DB
 	blobs     blob.Store
 	allocator *alloc.Allocator
+	keyring   *crypto.Keyring
 	enqueue   EnqueueFunc
 
 	domains    *ttlCache[string, core.Domain]
@@ -97,11 +99,12 @@ type storeReceiver struct {
 }
 
 // newStoreReceiver builds the production receiver.
-func newStoreReceiver(db *pg.DB, blobs blob.Store, allocator *alloc.Allocator, enqueue EnqueueFunc, cacheTTL time.Duration) *storeReceiver {
+func newStoreReceiver(db *pg.DB, blobs blob.Store, allocator *alloc.Allocator, keyring *crypto.Keyring, enqueue EnqueueFunc, cacheTTL time.Duration) *storeReceiver {
 	return &storeReceiver{
 		db:         db,
 		blobs:      blobs,
 		allocator:  allocator,
+		keyring:    keyring,
 		enqueue:    enqueue,
 		domains:    newTTLCache[string, core.Domain](256, cacheTTL),
 		identities: newTTLCache[string, core.Identity](4096, cacheTTL),
@@ -202,25 +205,35 @@ func (r *storeReceiver) resolveIdentity(ctx context.Context, localPart string, d
 
 // Commit implements MailReceiver.
 //
-// The blob is written first and the database second, because the blob write is
-// the part that cannot participate in a transaction. Everything that can —
-// lazy identity creation, the blob row, the sequence reservation, the delivery
-// rows and the events — commits together. Only then does the caller
-// acknowledge, which is invariant 1.
+// The message is encrypted under a fresh content key and written to the blob
+// store first, because that write cannot join a transaction. Everything that
+// can — the blob row, lazily created identities, sequence reservations,
+// delivery rows with their wrapped content keys, the events, and the parse job
+// — commits together. Only then does the caller acknowledge, which is
+// invariant 1.
+//
+// The content key is wrapped separately for each recipient. That is what lets
+// one set of bytes be shared by several identities while each one's access to
+// it stays separately revocable: purging an identity destroys its wrapping and
+// nothing else.
 func (r *storeReceiver) Commit(ctx context.Context, msg *Message) error {
 	if len(msg.Recipients) == 0 {
 		return errors.New("smtpd: commit with no recipients")
 	}
 
-	sha, size, err := r.blobs.Put(ctx, msg.Body)
+	contentKey, rawContentKey, err := crypto.NewContentKey()
 	if err != nil {
-		return fmt.Errorf("smtpd: storing message: %w", err)
+		return fmt.Errorf("smtpd: minting content key: %w", err)
 	}
-	if size != msg.Size {
-		// The blob store counted the bytes it actually wrote; trust that over
-		// the running count.
-		msg.Size = size
+	defer contentKey.Destroy()
+
+	sha, storedSize, plaintextSize, err := r.storeBody(ctx, contentKey, msg.Body)
+	if err != nil {
+		return err
 	}
+	// The delivery records the size of the message; the blob row records the
+	// size of what was written, which includes the encryption overhead.
+	msg.Size = plaintextSize
 
 	var provisioned []string
 	err = r.db.InTx(ctx, func(q pg.Querier) error {
@@ -228,15 +241,6 @@ func (r *storeReceiver) Commit(ctx context.Context, msg *Message) error {
 
 		for i := range msg.Recipients {
 			rcpt := &msg.Recipients[i]
-
-			// One reference per delivery, not one per message. Two identities
-			// receiving the same bytes share one blob row with a refcount of
-			// two, so releasing one of them at purge leaves the other's copy
-			// readable.
-			blobID, _, err := pg.AcquireBlob(ctx, q, sha, size, r.blobs.Locate(sha))
-			if err != nil {
-				return err
-			}
 
 			identity := rcpt.Identity
 			if rcpt.Provision {
@@ -262,24 +266,39 @@ func (r *storeReceiver) Commit(ctx context.Context, msg *Message) error {
 				// correct: accepting and dropping is what invariant 2 forbids.
 				return ErrUnknownRecipient
 			}
-			if locked.QuotaExceeded(size) {
+			if locked.QuotaExceeded(plaintextSize) {
 				return ErrMailboxFull
 			}
 
-			seq, err := pg.ReserveDeliverySlot(ctx, q, locked.ID, size)
+			wrappedContentKey, err := r.wrapForIdentity(locked, rawContentKey)
+			if err != nil {
+				return err
+			}
+
+			// One blob reference per delivery, not one per message. Two
+			// identities receiving the same bytes share one blob row with a
+			// refcount of two, so releasing one of them at purge leaves the
+			// other's copy intact.
+			blobID, _, err := pg.AcquireBlob(ctx, q, sha, storedSize, r.blobs.Locate(sha))
+			if err != nil {
+				return err
+			}
+
+			seq, err := pg.ReserveDeliverySlot(ctx, q, locked.ID, plaintextSize)
 			if err != nil {
 				return err
 			}
 			delivery := &core.Delivery{
-				IdentityID:   locked.ID,
-				Seq:          seq,
-				BlobID:       blobID,
-				EnvelopeFrom: msg.EnvelopeFrom,
-				ClientIP:     msg.ClientIP,
-				HELO:         msg.HELO,
-				TLS:          msg.TLS,
-				SizeBytes:    size,
-				State:        core.DeliveryReceived,
+				IdentityID:        locked.ID,
+				Seq:               seq,
+				BlobID:            blobID,
+				EnvelopeFrom:      msg.EnvelopeFrom,
+				ClientIP:          msg.ClientIP,
+				HELO:              msg.HELO,
+				TLS:               msg.TLS,
+				SizeBytes:         plaintextSize,
+				State:             core.DeliveryReceived,
+				WrappedContentKey: wrappedContentKey,
 			}
 			if err := pg.InsertDelivery(ctx, q, delivery); err != nil {
 				return err
@@ -287,7 +306,7 @@ func (r *storeReceiver) Commit(ctx context.Context, msg *Message) error {
 			if _, err := pg.AppendEvent(ctx, q, &locked.ID, core.EventMessageReceived, map[string]any{
 				"delivery_id": delivery.ID,
 				"seq":         seq,
-				"size_bytes":  size,
+				"size_bytes":  plaintextSize,
 				"from":        msg.EnvelopeFrom,
 			}); err != nil {
 				return err
@@ -319,4 +338,50 @@ func (r *storeReceiver) Commit(ctx context.Context, msg *Message) error {
 		r.identities.Forget(msg.Recipients[i].Address())
 	}
 	return nil
+}
+
+// storeBody encrypts the message into the blob store, returning the content
+// address, the number of bytes stored, and the size of the message itself.
+//
+// The encryption is streamed: a message is capped at 25MB, and holding that
+// many times the number of simultaneous senders in heap is exactly what
+// spooling to disk was meant to avoid.
+func (r *storeReceiver) storeBody(ctx context.Context, contentKey *crypto.DataKey, body io.Reader) (blob.SHA256, int64, int64, error) {
+	var (
+		plaintextSize int64
+		sealErr       error
+	)
+	reader, writer := io.Pipe()
+	go func() {
+		n, err := contentKey.SealStream(writer, body)
+		plaintextSize, sealErr = n, err
+		_ = writer.CloseWithError(err)
+	}()
+
+	sha, storedSize, err := r.blobs.Put(ctx, reader)
+	if err != nil {
+		return sha, 0, 0, fmt.Errorf("smtpd: storing message: %w", err)
+	}
+	if sealErr != nil {
+		return sha, 0, 0, fmt.Errorf("smtpd: encrypting message: %w", sealErr)
+	}
+	return sha, storedSize, plaintextSize, nil
+}
+
+// wrapForIdentity wraps the content key under one identity's data key.
+func (r *storeReceiver) wrapForIdentity(identity *core.Identity, rawContentKey []byte) ([]byte, error) {
+	if r.keyring == nil {
+		return nil, errors.New("smtpd: receiver has no keyring")
+	}
+	dataKey, err := r.keyring.Unwrap(identity.ID, identity.WrappedDataKey)
+	if err != nil {
+		return nil, fmt.Errorf("smtpd: unwrapping data key for %s: %w", identity.ID, err)
+	}
+	defer dataKey.Destroy()
+
+	wrapped, err := dataKey.Seal(rawContentKey)
+	if err != nil {
+		return nil, fmt.Errorf("smtpd: wrapping content key for %s: %w", identity.ID, err)
+	}
+	return wrapped, nil
 }

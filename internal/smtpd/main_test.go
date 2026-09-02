@@ -1,6 +1,7 @@
 package smtpd
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -131,7 +132,7 @@ func newHarness(t *testing.T, configure ...func(*Config)) *harness {
 		fn(&cfg)
 	}
 
-	h.server = New(cfg, testDB, blobs, allocator)
+	h.server = New(cfg, testDB, blobs, allocator, keyring)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -171,6 +172,35 @@ func (h *harness) allocate(session string) (*core.Identity, string) {
 		h.t.Fatalf("AllocateRandom: %v", err)
 	}
 	return result.Identity, result.Address()
+}
+
+// decryptBlob reads a stored blob back the way the parse worker will: unwrap
+// the delivery's content key with the identity data key, then open the stream.
+func (h *harness) decryptBlob(d *core.Delivery, stored []byte) string {
+	h.t.Helper()
+
+	identity, err := pg.IdentityByID(context.Background(), h.db, d.IdentityID)
+	if err != nil {
+		h.t.Fatalf("IdentityByID: %v", err)
+	}
+	dataKey, err := h.keyring.Unwrap(identity.ID, identity.WrappedDataKey)
+	if err != nil {
+		h.t.Fatalf("Unwrap: %v", err)
+	}
+	rawContentKey, err := dataKey.Open(d.WrappedContentKey)
+	if err != nil {
+		h.t.Fatalf("unwrapping the content key: %v", err)
+	}
+	contentKey, err := crypto.ContentKeyFrom(rawContentKey)
+	if err != nil {
+		h.t.Fatalf("ContentKeyFrom: %v", err)
+	}
+
+	var out bytes.Buffer
+	if _, err := contentKey.OpenStream(&out, bytes.NewReader(stored)); err != nil {
+		h.t.Fatalf("OpenStream: %v", err)
+	}
+	return out.String()
 }
 
 func (h *harness) countRows(table string) int {

@@ -86,7 +86,7 @@ func (r *runtime) runSMTPD(ctx context.Context) error {
 		Enqueue: func(ctx context.Context, q pg.Querier, deliveryID core.UUID) error {
 			return parse.Enqueue(ctx, inserter, q, deliveryID)
 		},
-	}, r.db, r.blobs, r.allocator)
+	}, r.db, r.blobs, r.allocator, r.keyring)
 
 	return server.ListenAndServe(ctx)
 }
