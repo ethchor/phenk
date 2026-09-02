@@ -18,6 +18,7 @@ import (
 	"github.com/emersion/go-smtp"
 
 	"github.com/ethchor/phenk/internal/alloc"
+	"github.com/ethchor/phenk/internal/crypto"
 	"github.com/ethchor/phenk/internal/store/blob"
 	"github.com/ethchor/phenk/internal/store/pg"
 )
@@ -105,9 +106,9 @@ type Server struct {
 }
 
 // New builds a listener over the real storage layer.
-func New(cfg Config, db *pg.DB, blobs blob.Store, allocator *alloc.Allocator) *Server {
+func New(cfg Config, db *pg.DB, blobs blob.Store, allocator *alloc.Allocator, keyring *crypto.Keyring) *Server {
 	cfg.withDefaults()
-	return newWithReceiver(cfg, newStoreReceiver(db, blobs, allocator, cfg.Enqueue, cfg.ResolveCacheTTL))
+	return newWithReceiver(cfg, newStoreReceiver(db, blobs, allocator, keyring, cfg.Enqueue, cfg.ResolveCacheTTL))
 }
 
 // newWithReceiver builds a listener over any MailReceiver. Tests use it to

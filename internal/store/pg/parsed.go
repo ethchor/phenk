@@ -117,7 +117,8 @@ func AttachmentsForDelivery(ctx context.Context, q Querier, deliveryID core.UUID
 func SearchDeliveries(ctx context.Context, q Querier, identityID core.UUID, query string, limit int) ([]core.Delivery, error) {
 	rows, err := q.Query(ctx, `
 		SELECT d.id, d.identity_id, d.seq, d.blob_id, d.envelope_from, d.client_ip, d.helo,
-		       d.tls, d.size_bytes, d.spf, d.dkim, d.dmarc, d.state, d.received_at, d.parsed_at
+		       d.tls, d.size_bytes, d.spf, d.dkim, d.dmarc, d.state, d.received_at, d.parsed_at,
+		       d.wrapped_content_key
 		  FROM deliveries d
 		  JOIN parsed_messages p ON p.delivery_id = d.id
 		 WHERE d.identity_id = $1 AND p.tsv @@ websearch_to_tsquery('simple', $2)

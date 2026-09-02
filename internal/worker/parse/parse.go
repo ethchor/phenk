@@ -103,7 +103,7 @@ func (p *Parser) Parse(ctx context.Context, deliveryID core.UUID) error {
 	}
 	defer dataKey.Destroy()
 
-	raw, err := p.readBlob(ctx, delivery.BlobID)
+	raw, err := p.readBlob(ctx, delivery, dataKey)
 	if err != nil {
 		return err
 	}
@@ -157,8 +157,14 @@ func (p *Parser) Parse(ctx context.Context, deliveryID core.UUID) error {
 	return nil
 }
 
-func (p *Parser) readBlob(ctx context.Context, blobID core.UUID) ([]byte, error) {
-	row, err := pg.BlobByID(ctx, p.db, blobID)
+// readBlob fetches and decrypts the raw message.
+//
+// The blob is encrypted under a content key shared by everyone who received
+// the message; this delivery's own wrapping of that key is what grants access.
+// An identity purged in the meantime has had its wrapping destroyed, and no
+// amount of retrying will bring it back.
+func (p *Parser) readBlob(ctx context.Context, delivery *core.Delivery, dataKey *crypto.DataKey) ([]byte, error) {
+	row, err := pg.BlobByID(ctx, p.db, delivery.BlobID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: loading blob row: %v", ErrPermanent, err)
 	}
@@ -166,6 +172,13 @@ func (p *Parser) readBlob(ctx context.Context, blobID core.UUID) ([]byte, error)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrPermanent, err)
 	}
+
+	contentKey, err := UnwrapContentKey(dataKey, delivery.WrappedContentKey)
+	if err != nil {
+		return nil, err
+	}
+	defer contentKey.Destroy()
+
 	rc, err := p.blobs.Get(ctx, sha)
 	if err != nil {
 		// A missing blob may be a storage hiccup, so this is worth retrying.
@@ -173,11 +186,30 @@ func (p *Parser) readBlob(ctx context.Context, blobID core.UUID) ([]byte, error)
 	}
 	defer rc.Close()
 
-	raw, err := io.ReadAll(rc)
-	if err != nil {
-		return nil, fmt.Errorf("parse: reading blob %s: %w", sha, err)
+	var raw bytes.Buffer
+	if _, err := contentKey.OpenStream(&raw, rc); err != nil {
+		// The bytes are there but do not authenticate. Retrying cannot change
+		// that, and it is worth failing loudly rather than parsing rubbish.
+		return nil, fmt.Errorf("%w: decrypting blob %s: %v", ErrPermanent, sha, err)
 	}
-	return raw, nil
+	return raw.Bytes(), nil
+}
+
+// UnwrapContentKey recovers a blob's content key from a delivery's wrapping.
+// It is exported because the API reads raw messages the same way.
+func UnwrapContentKey(dataKey *crypto.DataKey, wrapped []byte) (*crypto.DataKey, error) {
+	if len(wrapped) == 0 {
+		return nil, fmt.Errorf("%w: delivery has no content key", ErrPermanent)
+	}
+	raw, err := dataKey.Open(wrapped)
+	if err != nil {
+		return nil, fmt.Errorf("%w: unwrapping content key: %v", ErrPermanent, err)
+	}
+	contentKey, err := crypto.ContentKeyFrom(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrPermanent, err)
+	}
+	return contentKey, nil
 }
 
 // result carries what one parse produced, before it is written.

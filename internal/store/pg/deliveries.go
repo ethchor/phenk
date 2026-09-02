@@ -7,7 +7,7 @@ import (
 )
 
 const deliveryColumns = `id, identity_id, seq, blob_id, envelope_from, client_ip, helo,
-	tls, size_bytes, spf, dkim, dmarc, state, received_at, parsed_at`
+	tls, size_bytes, spf, dkim, dmarc, state, received_at, parsed_at, wrapped_content_key`
 
 // ReserveDeliverySlot takes the identity's row lock, allocates the next
 // delivery sequence number, and charges the message against the identity's
@@ -41,12 +41,12 @@ func InsertDelivery(ctx context.Context, q Querier, d *core.Delivery) error {
 	err := q.QueryRow(ctx, `
 		INSERT INTO deliveries (
 			id, identity_id, seq, blob_id, envelope_from, client_ip, helo, tls,
-			size_bytes, spf, dkim, dmarc, state, received_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, now()))
+			size_bytes, spf, dkim, dmarc, state, received_at, wrapped_content_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, now()), $15)
 		RETURNING received_at`,
 		d.ID, d.IdentityID, d.Seq, d.BlobID, d.EnvelopeFrom, d.ClientIP, nullString(d.HELO),
 		d.TLS, d.SizeBytes, nullString(string(d.SPF)), nullString(string(d.DKIM)),
-		nullString(string(d.DMARC)), d.State, nullTime(d.ReceivedAt),
+		nullString(string(d.DMARC)), d.State, nullTime(d.ReceivedAt), d.WrappedContentKey,
 	).Scan(&d.ReceivedAt)
 	return mapError(err)
 }
@@ -122,7 +122,8 @@ func scanDelivery(row rowScanner) (*core.Delivery, error) {
 		spf, dkim, dmarc *string
 	)
 	err := row.Scan(&d.ID, &d.IdentityID, &d.Seq, &d.BlobID, &d.EnvelopeFrom, &d.ClientIP,
-		&helo, &d.TLS, &d.SizeBytes, &spf, &dkim, &dmarc, &d.State, &d.ReceivedAt, &d.ParsedAt)
+		&helo, &d.TLS, &d.SizeBytes, &spf, &dkim, &dmarc, &d.State, &d.ReceivedAt, &d.ParsedAt,
+		&d.WrappedContentKey)
 	if err != nil {
 		return nil, mapError(err)
 	}

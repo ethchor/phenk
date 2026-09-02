@@ -40,20 +40,35 @@ func TestDeliverToAKnownAddress(t *testing.T) {
 		t.Fatal("delivery recorded no size")
 	}
 
-	// The raw bytes are on disk, content-addressed, and readable back.
+	// The raw bytes are on disk, content-addressed, and encrypted.
 	blobRow, err := pg.BlobByID(context.Background(), h.db, d.BlobID)
 	if err != nil {
 		t.Fatalf("BlobByID: %v", err)
 	}
-	if blobRow.Refcount != 1 || blobRow.SizeBytes != d.SizeBytes {
+	if blobRow.Refcount != 1 {
 		t.Fatalf("blob = %+v", blobRow)
 	}
-	raw, err := os.ReadFile(filepath.Join(h.blobDir, blobRow.Path))
+	// The blob row counts what was stored, which carries encryption overhead;
+	// the delivery counts the message itself, which is what a quota charges.
+	if blobRow.SizeBytes <= d.SizeBytes {
+		t.Fatalf("stored %d bytes for a %d byte message, want the ciphertext to be larger",
+			blobRow.SizeBytes, d.SizeBytes)
+	}
+
+	stored, err := os.ReadFile(filepath.Join(h.blobDir, blobRow.Path))
 	if err != nil {
 		t.Fatalf("reading blob: %v", err)
 	}
-	if !strings.Contains(string(raw), "Subject: hello") {
-		t.Fatalf("stored message is missing its subject: %q", raw)
+	if strings.Contains(string(stored), "Subject: hello") {
+		t.Fatal("the raw message is stored in the clear")
+	}
+
+	// And it decrypts, through the delivery's own wrapping of the content key.
+	if len(d.WrappedContentKey) == 0 {
+		t.Fatal("the delivery carries no content key")
+	}
+	if raw := h.decryptBlob(&d, stored); !strings.Contains(raw, "Subject: hello") {
+		t.Fatalf("decrypted message = %q", raw)
 	}
 
 	// The received event was written in the same transaction.
