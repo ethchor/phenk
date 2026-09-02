@@ -1,0 +1,10 @@
+@import "@phenk/ui/theme.css";
+
+@source "../src";
+@source "../../packages/ui/src";
+
+html,
+body,
+#root {
+  height: 100%;
+}
