@@ -5,6 +5,7 @@ PKGS    := ./...
 .PHONY: help
 help:
 	@echo "make preflight   run CI's own steps locally (the only gate that matters)"
+	@echo "make generate    regenerate API stubs from api/openapi.yaml"
 	@echo "make build       build the phenk binary"
 	@echo "make test        run the Go test suite"
 	@echo "make fmt         gofmt the tree"
@@ -16,6 +17,13 @@ help:
 .PHONY: preflight
 preflight:
 	@python3 scripts/preflight.py
+
+# Regenerates the API server stubs from api/openapi.yaml. CI fails if the
+# checked-in output is stale, so the implementation cannot drift from the
+# published contract.
+.PHONY: generate
+generate:
+	$(GO) generate ./...
 
 .PHONY: build
 build:

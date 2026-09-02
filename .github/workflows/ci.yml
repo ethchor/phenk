@@ -59,6 +59,15 @@ jobs:
           diff -u go.sum.orig go.sum
           rm go.mod.orig go.sum.orig
 
+      - name: Verify generated code is current
+        run: |
+          go generate ./...
+          if ! git diff --quiet -- internal/api/apigen; then
+            echo "Generated code is stale. Run 'make generate' and commit the result."
+            git --no-pager diff -- internal/api/apigen
+            exit 1
+          fi
+
       - name: Build
         run: go build ./...
 

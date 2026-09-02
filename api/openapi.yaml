@@ -1,0 +1,570 @@
+openapi: 3.1.0
+
+info:
+  title: Phenk
+  version: 0.1.0
+  summary: Ephemeral email
+  description: |
+    Phenk hands out email addresses that expire.
+
+    There are two kinds of address and the difference matters. A **random**
+    address is unguessable, owned by the session that created it, and destroyed
+    on a deadline. A **named** address is one anybody can open by typing its
+    name, shared by everybody who knows it, and permanent. Named addresses can
+    never hold a grant, a webhook, or an API key, because there is no one to
+    grant anything to.
+
+    Ownership of a random identity is the session cookie in v0. API keys come
+    later.
+  license:
+    name: AGPL-3.0-or-later
+
+servers:
+  - url: https://api.phenk.example
+    description: Production
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: identities
+    description: Creating and inspecting addresses
+  - name: messages
+    description: Reading mail
+  - name: named
+    description: Shared, public inboxes
+
+paths:
+  /v1/identities:
+    post:
+      operationId: createIdentity
+      tags: [identities]
+      summary: Allocate an address
+      description: |
+        Creates a random, session-owned address on a random-pool domain.
+
+        Passing `kind: named` requires `local_part` and is equivalent to
+        `POST /v1/named`, including its rate limits. The resulting inbox is
+        public.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIdentityRequest'
+      responses:
+        '201':
+          description: The address is live and already accepting mail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Identity' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503':
+          description: No domain in the pool can currently hand out addresses.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/identities/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdentityId'
+    get:
+      operationId: getIdentity
+      tags: [identities]
+      summary: Read an address
+      responses:
+        '200':
+          description: The identity.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Identity' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: destroyIdentity
+      tags: [identities]
+      summary: Destroy an address now
+      description: |
+        Expires the identity immediately. Its messages are purged and its data
+        key destroyed by the next purge run, after which nothing it received can
+        be read by anyone. The address is never reallocated.
+      responses:
+        '204':
+          description: Destroyed. Repeating the call is safe.
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/identities/{id}/messages:
+    parameters:
+      - $ref: '#/components/parameters/IdentityId'
+      - $ref: '#/components/parameters/Since'
+      - $ref: '#/components/parameters/Limit'
+    get:
+      operationId: listMessages
+      tags: [messages]
+      summary: List messages after a cursor
+      responses:
+        '200':
+          description: Messages in arrival order, oldest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageList' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/identities/{id}/wait:
+    parameters:
+      - $ref: '#/components/parameters/IdentityId'
+      - $ref: '#/components/parameters/Since'
+      - name: timeout
+        in: query
+        description: Seconds to hold the request open. Capped at 120.
+        schema: { type: integer, minimum: 1, maximum: 120, default: 30 }
+    get:
+      operationId: waitForMessages
+      tags: [messages]
+      summary: Long-poll for the next message
+      description: |
+        Returns immediately if anything has already arrived after `since`, and
+        otherwise holds the request open until something does or the timeout
+        expires.
+
+        The already-arrived check happens before any subscription, which is the
+        whole point: the gap between creating an address and first waiting on it
+        is exactly where real mail lands.
+      responses:
+        '200':
+          description: |
+            Zero or more messages. An empty list with `timed_out: true` means
+            nothing arrived; call again with the returned cursor.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WaitResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/identities/{id}/stream:
+    parameters:
+      - $ref: '#/components/parameters/IdentityId'
+      - $ref: '#/components/parameters/Since'
+    get:
+      operationId: streamIdentity
+      tags: [messages]
+      summary: Server-sent event stream for an address
+      description: |
+        Emits `message.received`, `message.parsed`, `identity.expiring`,
+        `identity.expired` and `identity.purged`. Reconnect with the `since`
+        cursor to collect anything missed while disconnected.
+      responses:
+        '200':
+          description: An event stream.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/messages/{id}:
+    parameters:
+      - $ref: '#/components/parameters/MessageId'
+    get:
+      operationId: getMessage
+      tags: [messages]
+      summary: Read one message
+      responses:
+        '200':
+          description: |
+            The message. `html` is already sanitized and must still be rendered
+            in a sandboxed iframe with no scripting: never inject it into the
+            page directly.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/messages/{id}/raw:
+    parameters:
+      - $ref: '#/components/parameters/MessageId'
+    get:
+      operationId: getRawMessage
+      tags: [messages]
+      summary: Download the original MIME message
+      description: |
+        The bytes exactly as they arrived. This is the record; everything else
+        the API returns is derived from it and can be rebuilt.
+      responses:
+        '200':
+          description: The raw message.
+          content:
+            message/rfc822:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/messages/{id}/attachments/{attachmentId}:
+    parameters:
+      - $ref: '#/components/parameters/MessageId'
+      - name: attachmentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getAttachment
+      tags: [messages]
+      summary: Download an attachment
+      responses:
+        '200':
+          description: The attachment.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/named:
+    post:
+      operationId: openNamedInbox
+      tags: [named]
+      summary: Open a public inbox by name
+      description: |
+        Resolves a named inbox, creating it if nobody has used the name before.
+        The same name always resolves to the same address.
+
+        **Anyone who guesses the name can read this inbox.** Every interface
+        showing one is required to say so.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenNamedRequest' }
+      responses:
+        '200':
+          description: The inbox, whether it already existed or was just created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Identity' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503':
+          description: No public-pool domain can currently hand out addresses.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/named/{address}/messages:
+    parameters:
+      - $ref: '#/components/parameters/NamedAddress'
+      - $ref: '#/components/parameters/Since'
+      - $ref: '#/components/parameters/Limit'
+    get:
+      operationId: listNamedMessages
+      tags: [named]
+      summary: List a public inbox's messages
+      description: No ownership check, by design. There is no owner.
+      responses:
+        '200':
+          description: Messages in arrival order, oldest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageList' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/named/{address}/stream:
+    parameters:
+      - $ref: '#/components/parameters/NamedAddress'
+      - $ref: '#/components/parameters/Since'
+    get:
+      operationId: streamNamedInbox
+      tags: [named]
+      summary: Server-sent event stream for a public inbox
+      responses:
+        '200':
+          description: An event stream.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /i/{signature}:
+    parameters:
+      - name: signature
+        in: path
+        required: true
+        description: Signature issued when the message was sanitized.
+        schema: { type: string }
+      - name: u
+        in: query
+        required: true
+        description: The remote image URL.
+        schema: { type: string, format: uri }
+    get:
+      operationId: proxyImage
+      tags: [messages]
+      summary: Fetch a remote image on the reader's behalf
+      description: |
+        Message HTML never loads remote images directly: doing so would report
+        the reader's address, user agent and read time back to the sender. This
+        fetches them server-side instead.
+
+        Only URLs signed during sanitizing are served, and private address
+        ranges are refused, including after a redirect.
+      responses:
+        '200':
+          description: The image.
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        '400':
+          description: The signature does not match the URL.
+        '403':
+          description: The URL resolves somewhere the proxy will not go.
+        '502':
+          description: The remote host did not return a usable image.
+
+  /healthz:
+    get:
+      operationId: health
+      summary: Liveness and readiness
+      responses:
+        '200':
+          description: Serving.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503':
+          description: Not serving.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+
+components:
+  parameters:
+    IdentityId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MessageId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    NamedAddress:
+      name: address
+      in: path
+      required: true
+      description: A local part, or a full address on a public-pool domain.
+      schema: { type: string }
+    Since:
+      name: since
+      in: query
+      description: Return only what arrived after this cursor.
+      schema: { type: integer, format: int64, minimum: 0, default: 0 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+
+  responses:
+    BadRequest:
+      description: The request was malformed or asked for something disallowed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: |
+        No such thing, or it is not yours. The two are deliberately
+        indistinguishable.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: Rate limited.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    CreateIdentityRequest:
+      type: object
+      properties:
+        ttl_seconds:
+          type: integer
+          minimum: 60
+          description: How long the address lives. Clamped to the server maximum.
+        kind:
+          type: string
+          enum: [random, named]
+          default: random
+        local_part:
+          type: string
+          description: Required for `named`, ignored for `random`.
+      additionalProperties: false
+
+    OpenNamedRequest:
+      type: object
+      required: [local_part]
+      properties:
+        local_part:
+          type: string
+          description: |
+            Lower-cased and stripped of any `+tag` before use. Must match
+            `^[a-z0-9][a-z0-9._-]{2,63}$`, must not be a reserved name such as
+            `postmaster`, and must not look like a generated address.
+      additionalProperties: false
+
+    Identity:
+      type: object
+      required: [id, address, local_part, domain, kind, state, cursor, public, created_at, quota]
+      properties:
+        id: { type: string, format: uuid }
+        address: { type: string }
+        local_part: { type: string }
+        domain: { type: string }
+        kind: { type: string, enum: [random, named] }
+        state:
+          type: string
+          enum: [active, expiring, expired, purged, reserved]
+        cursor:
+          type: integer
+          format: int64
+          description: The sequence number of the newest message. Pass it as `since`.
+        public:
+          type: boolean
+          description: |
+            True for named inboxes. Anyone who guesses the name can read them,
+            and every interface showing one must say so plainly.
+        created_at: { type: string, format: date-time }
+        expires_at:
+          type: string
+          format: date-time
+          description: Absent for named inboxes, which are permanent.
+        retention_hours:
+          type: integer
+          description: Rolling per-message retention. Named inboxes only.
+        quota: { $ref: '#/components/schemas/Quota' }
+
+    Quota:
+      type: object
+      required: [messages, bytes, used_messages, used_bytes]
+      properties:
+        messages: { type: integer }
+        bytes: { type: integer, format: int64 }
+        used_messages: { type: integer }
+        used_bytes: { type: integer, format: int64 }
+
+    MessageList:
+      type: object
+      required: [messages, cursor]
+      properties:
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/MessageSummary' }
+        cursor:
+          type: integer
+          format: int64
+          description: Pass as `since` on the next call.
+
+    WaitResult:
+      allOf:
+        - $ref: '#/components/schemas/MessageList'
+        - type: object
+          required: [timed_out]
+          properties:
+            timed_out:
+              type: boolean
+              description: True when the wait expired with nothing new.
+
+    MessageSummary:
+      type: object
+      required: [id, seq, subject, preview, from, received_at, size_bytes, state, attachment_count, auth]
+      properties:
+        id: { type: string, format: uuid }
+        seq: { type: integer, format: int64 }
+        subject: { type: string }
+        preview: { type: string }
+        from: { $ref: '#/components/schemas/Address' }
+        received_at: { type: string, format: date-time }
+        sent_at:
+          type: string
+          format: date-time
+          description: The Date header, when the message carried a usable one.
+        size_bytes: { type: integer, format: int64 }
+        state:
+          type: string
+          enum: [received, parsed, failed]
+          description: |
+            `received` means the message is stored but not yet parsed, so
+            subject and preview may still be empty. `failed` means it could not
+            be parsed; the raw message is still downloadable.
+        attachment_count: { type: integer }
+        auth: { $ref: '#/components/schemas/AuthResults' }
+
+    Message:
+      allOf:
+        - $ref: '#/components/schemas/MessageSummary'
+        - type: object
+          required: [to, attachments]
+          properties:
+            to:
+              type: array
+              items: { type: string }
+            cc:
+              type: array
+              items: { type: string }
+            text:
+              type: string
+            html:
+              type: string
+              description: |
+                Already sanitized, with remote images rewritten to the proxy.
+                Render it in a sandboxed iframe with no `allow-scripts` and no
+                `allow-same-origin`. Never inject it into the page directly.
+            attachments:
+              type: array
+              items: { $ref: '#/components/schemas/Attachment' }
+
+    Address:
+      type: object
+      required: [address]
+      properties:
+        name: { type: string }
+        address: { type: string }
+
+    Attachment:
+      type: object
+      required: [id, filename, content_type, size_bytes, available]
+      properties:
+        id: { type: string, format: uuid }
+        filename: { type: string }
+        content_type: { type: string }
+        size_bytes: { type: integer, format: int64 }
+        available:
+          type: boolean
+          description: False when the part was too large to store.
+
+    AuthResults:
+      type: object
+      required: [spf, dkim, dmarc]
+      description: |
+        `none` means the check was not evaluated or the sender published
+        nothing to check against. It is not a pass.
+      properties:
+        spf: { $ref: '#/components/schemas/AuthResult' }
+        dkim: { $ref: '#/components/schemas/AuthResult' }
+        dmarc: { $ref: '#/components/schemas/AuthResult' }
+
+    AuthResult:
+      type: string
+      enum: [none, pass, fail, softfail, neutral, temperror, permerror]
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        version: { type: string }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }

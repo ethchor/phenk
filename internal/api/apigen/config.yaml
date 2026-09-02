@@ -1,0 +1,15 @@
+# oapi-codegen configuration.
+#
+# Only types and the server interface are generated. Handler bodies are written
+# by hand: the generated interface is the contract, so a handler that drifts
+# from api/openapi.yaml stops compiling rather than quietly serving something
+# the documentation denies.
+package: apigen
+output: apigen.gen.go
+generate:
+  models: true
+  chi-server: true
+  strict-server: false
+  embedded-spec: true
+output-options:
+  skip-prune: true
