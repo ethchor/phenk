@@ -103,22 +103,13 @@ func run(ctx context.Context, command string, args []string) error {
 		return rt.runSMTPD(ctx)
 	case "worker":
 		return rt.runWorker(ctx)
-	case "api", "all":
-		return notYetImplemented(command)
+	case "api":
+		return rt.runAPI(ctx)
+	case "all":
+		return rt.runAll(ctx)
 	default:
 		return fmt.Errorf("%w: %s", errUnknownCommand, command)
 	}
-}
-
-// notYetImplemented keeps the run modes visible in the CLI while the phases
-// that fill them in land. It fails loudly rather than starting a process that
-// silently does nothing.
-func notYetImplemented(command string) error {
-	phases := map[string]string{
-		"api": "phase 4",
-		"all": "phase 4",
-	}
-	return fmt.Errorf("phenk %s arrives in %s; the configuration and database it needs are already wired up", command, phases[command])
 }
 
 func domainCommand(ctx context.Context, db *pg.DB, args []string) error {
