@@ -1,0 +1,16 @@
+# Build output. The leading slash matters: a bare `phenk` would also match
+# cmd/phenk/, and silently exclude the command from the repository.
+/bin/
+/dist/
+/phenk
+
+# Frontend build output, embedded into the binary at build time
+/internal/web/dist/
+node_modules/
+.next/
+
+# Local development
+.env
+.env.local
+/data/
+*.eml

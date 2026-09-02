@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: phenk
+          POSTGRES_PASSWORD: phenk
+          POSTGRES_DB: phenk_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # The storage tests refuse to skip in CI: a missing database must be a
+      # failure here, not a silent gap in coverage.
+      PHENK_TEST_DSN: postgres://phenk:phenk@127.0.0.1:5432/phenk_test?sslmode=disable
+      PHENK_TEST_REQUIRED: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Read the version out of go.mod so the toolchain CI uses can never
+      # drift from the one the module declares.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l . | grep -v '^internal/web/dist/' || true)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Verify module tidiness
+        run: |
+          cp go.mod go.mod.orig
+          cp go.sum go.sum.orig
+          go mod tidy
+          diff -u go.mod.orig go.mod
+          diff -u go.sum.orig go.sum
+          rm go.mod.orig go.sum.orig
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...
