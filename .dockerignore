@@ -1,0 +1,7 @@
+.git
+bin
+data
+node_modules
+site
+web/node_modules
+*.eml

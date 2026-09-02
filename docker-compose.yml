@@ -1,0 +1,53 @@
+# Development stack: Postgres, plus the phenk binary in one-process mode.
+#
+# Port 25 is bound on the host so a real MX record can point here during the
+# Phase 0 infrastructure proof. Many providers block inbound 25 silently; if
+# nothing arrives, that is the first thing to check.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: phenk
+      POSTGRES_PASSWORD: phenk
+      POSTGRES_DB: phenk
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phenk"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  phenk:
+    build: .
+    command: ["all"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PHENK_ENV: development
+      PHENK_DATABASE_URL: postgres://phenk:phenk@postgres:5432/phenk?sslmode=disable
+      # Development only. Generate a real one with `phenk genkey` and keep it
+      # out of source control: losing it destroys every inbox, which is the
+      # point of it.
+      PHENK_MASTER_KEY: ZGV2ZWxvcG1lbnQtb25seS1tYXN0ZXIta2V5LTMyYiE=
+      PHENK_BLOB_DIR: /var/lib/phenk/blobs
+      PHENK_SMTP_ADDR: ":25"
+      PHENK_SMTP_HOSTNAME: localhost
+      PHENK_API_ADDR: ":8080"
+      PHENK_API_COOKIE_SECURE: "false"
+    ports:
+      - "25:25"
+      - "8080:8080"
+    volumes:
+      - blob-data:/var/lib/phenk/blobs
+    profiles:
+      - app
+
+volumes:
+  postgres-data:
+  blob-data:

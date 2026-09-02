@@ -1,0 +1,15 @@
+# Build output
+/bin/
+/dist/
+phenk
+
+# Frontend build output, embedded into the binary at build time
+/internal/web/dist/
+node_modules/
+.next/
+
+# Local development
+.env
+.env.local
+/data/
+*.eml
