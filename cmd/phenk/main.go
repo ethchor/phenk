@@ -101,7 +101,9 @@ func run(ctx context.Context, command string, args []string) error {
 	switch command {
 	case "smtpd":
 		return rt.runSMTPD(ctx)
-	case "api", "worker", "all":
+	case "worker":
+		return rt.runWorker(ctx)
+	case "api", "all":
 		return notYetImplemented(command)
 	default:
 		return fmt.Errorf("%w: %s", errUnknownCommand, command)
@@ -113,9 +115,8 @@ func run(ctx context.Context, command string, args []string) error {
 // silently does nothing.
 func notYetImplemented(command string) error {
 	phases := map[string]string{
-		"worker": "phase 3",
-		"api":    "phase 4",
-		"all":    "phases 3 and 4",
+		"api": "phase 4",
+		"all": "phase 4",
 	}
 	return fmt.Errorf("phenk %s arrives in %s; the configuration and database it needs are already wired up", command, phases[command])
 }

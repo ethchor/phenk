@@ -76,22 +76,33 @@ type MailReceiver interface {
 	Commit(ctx context.Context, msg *Message) error
 }
 
+// EnqueueFunc schedules follow-up work for a committed delivery, inside the
+// transaction that commits it.
+//
+// Running inside the transaction is the point: a committed message always has a
+// parse job and a rolled back one never does. Enqueuing after the commit would
+// leave a window where a crash loses the job and the message sits unparsed
+// forever with nothing to notice it.
+type EnqueueFunc func(ctx context.Context, q pg.Querier, deliveryID core.UUID) error
+
 // storeReceiver is the MailReceiver backed by Postgres and the blob store.
 type storeReceiver struct {
 	db        *pg.DB
 	blobs     blob.Store
 	allocator *alloc.Allocator
+	enqueue   EnqueueFunc
 
 	domains    *ttlCache[string, core.Domain]
 	identities *ttlCache[string, core.Identity]
 }
 
 // newStoreReceiver builds the production receiver.
-func newStoreReceiver(db *pg.DB, blobs blob.Store, allocator *alloc.Allocator, cacheTTL time.Duration) *storeReceiver {
+func newStoreReceiver(db *pg.DB, blobs blob.Store, allocator *alloc.Allocator, enqueue EnqueueFunc, cacheTTL time.Duration) *storeReceiver {
 	return &storeReceiver{
 		db:         db,
 		blobs:      blobs,
 		allocator:  allocator,
+		enqueue:    enqueue,
 		domains:    newTTLCache[string, core.Domain](256, cacheTTL),
 		identities: newTTLCache[string, core.Identity](4096, cacheTTL),
 	}
@@ -280,6 +291,11 @@ func (r *storeReceiver) Commit(ctx context.Context, msg *Message) error {
 				"from":        msg.EnvelopeFrom,
 			}); err != nil {
 				return err
+			}
+			if r.enqueue != nil {
+				if err := r.enqueue(ctx, q, delivery.ID); err != nil {
+					return fmt.Errorf("smtpd: enqueueing parse for %s: %w", delivery.ID, err)
+				}
 			}
 			rcpt.Identity = locked
 		}

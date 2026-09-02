@@ -50,6 +50,11 @@ type Config struct {
 	GlobalProvisionsHour int
 
 	TLSConfig *tls.Config
+
+	// Enqueue schedules follow-up work inside the delivery commit
+	// transaction. A nil hook means committed messages simply wait, which is
+	// what a listener running without a worker should do.
+	Enqueue EnqueueFunc
 }
 
 func (c *Config) withDefaults() {
@@ -82,18 +87,10 @@ func (c *Config) withDefaults() {
 	}
 }
 
-// ParseNotifier is told about a committed message so the parse job can be
-// enqueued. Phase 3 supplies the real one; until then a nil notifier is fine
-// and the raw message simply waits.
-type ParseNotifier interface {
-	MessageCommitted(ctx context.Context, msg *Message)
-}
-
 // Server is the SMTP listener.
 type Server struct {
 	cfg      Config
 	receiver MailReceiver
-	notifier ParseNotifier
 
 	connections     *connectionLimiter
 	provisionPerIP  *rateLimiter
@@ -110,7 +107,7 @@ type Server struct {
 // New builds a listener over the real storage layer.
 func New(cfg Config, db *pg.DB, blobs blob.Store, allocator *alloc.Allocator) *Server {
 	cfg.withDefaults()
-	return newWithReceiver(cfg, newStoreReceiver(db, blobs, allocator, cfg.ResolveCacheTTL))
+	return newWithReceiver(cfg, newStoreReceiver(db, blobs, allocator, cfg.Enqueue, cfg.ResolveCacheTTL))
 }
 
 // newWithReceiver builds a listener over any MailReceiver. Tests use it to
@@ -145,9 +142,6 @@ func newWithReceiver(cfg Config, receiver MailReceiver) *Server {
 	s.smtp = server
 	return s
 }
-
-// SetParseNotifier installs the hook that enqueues parse jobs.
-func (s *Server) SetParseNotifier(n ParseNotifier) { s.notifier = n }
 
 // ListenAndServe serves until the context is cancelled.
 func (s *Server) ListenAndServe(ctx context.Context) error {
@@ -184,12 +178,6 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 
 // Close stops the listener.
 func (s *Server) Close() error { return s.smtp.Close() }
-
-func (s *Server) notifyParse(ctx context.Context, msg *Message) {
-	if s.notifier != nil {
-		s.notifier.MessageCommitted(ctx, msg)
-	}
-}
 
 // backend hands out sessions and enforces the per-source connection cap.
 type backend struct{ server *Server }
