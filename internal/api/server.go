@@ -6,6 +6,7 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/ethchor/phenk/internal/sanitize"
 	"github.com/ethchor/phenk/internal/store/blob"
 	"github.com/ethchor/phenk/internal/store/pg"
+	"github.com/ethchor/phenk/internal/web"
 )
 
 // Config configures the HTTP tier.
@@ -91,6 +93,9 @@ func New(cfg Config, db *pg.DB, blobs blob.Store, keyring *crypto.Keyring, alloc
 }
 
 // Handler returns the routed HTTP handler.
+//
+// The API routes are registered first and the app is mounted underneath as a
+// fallback, so an app asset can never shadow an endpoint.
 func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
 	router.Use(middleware.RealIP)
@@ -99,7 +104,18 @@ func (s *Server) Handler() http.Handler {
 	// blanket timeout here would cut them off mid-wait.
 	router.Use(requestLogger)
 
-	return apigen.HandlerFromMux(s, router)
+	handler := apigen.HandlerFromMux(s, router)
+
+	app, err := web.Handler()
+	if err != nil {
+		// A binary built without a frontend still serves the API. Refusing to
+		// start would make `go build` on a fresh checkout useless for anyone
+		// working on the backend.
+		slog.Warn("serving the api without the inbox app", "reason", err)
+		return handler
+	}
+	router.NotFound(app.ServeHTTP)
+	return handler
 }
 
 // Health implements apigen.ServerInterface.

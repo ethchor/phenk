@@ -1,0 +1,130 @@
+/*
+ * The shared theme. Both surfaces import this file and neither defines a
+ * colour of its own, so the inbox and the marketing site cannot drift into
+ * looking like two different products.
+ *
+ * Every colour is a token. A hex value anywhere else in the codebase is a bug:
+ * it will be right in one theme and wrong in the other.
+ */
+
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --radius: 0.625rem;
+
+  /* Light. A warm near-white rather than pure white: a message list is read
+     for minutes at a time and pure white glares. */
+  --background: oklch(0.99 0.004 95);
+  --foreground: oklch(0.21 0.012 265);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.012 265);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.012 265);
+
+  /* Teal, chosen so the product does not look like every other shadcn app. */
+  --primary: oklch(0.58 0.13 184);
+  --primary-foreground: oklch(0.99 0.01 180);
+
+  --secondary: oklch(0.96 0.006 250);
+  --secondary-foreground: oklch(0.25 0.015 265);
+  --muted: oklch(0.96 0.006 250);
+  --muted-foreground: oklch(0.53 0.017 265);
+  --accent: oklch(0.95 0.02 184);
+  --accent-foreground: oklch(0.28 0.05 184);
+
+  --destructive: oklch(0.58 0.21 27);
+  --destructive-foreground: oklch(0.99 0.01 27);
+  --warning: oklch(0.72 0.16 70);
+  --warning-foreground: oklch(0.25 0.06 70);
+  --success: oklch(0.63 0.15 150);
+  --success-foreground: oklch(0.99 0.01 150);
+
+  --border: oklch(0.91 0.008 265);
+  --input: oklch(0.91 0.008 265);
+  --ring: oklch(0.58 0.13 184);
+}
+
+.dark {
+  --background: oklch(0.17 0.012 265);
+  --foreground: oklch(0.95 0.006 250);
+  --card: oklch(0.21 0.014 265);
+  --card-foreground: oklch(0.95 0.006 250);
+  --popover: oklch(0.21 0.014 265);
+  --popover-foreground: oklch(0.95 0.006 250);
+
+  --primary: oklch(0.72 0.12 184);
+  --primary-foreground: oklch(0.18 0.03 184);
+
+  --secondary: oklch(0.27 0.016 265);
+  --secondary-foreground: oklch(0.95 0.006 250);
+  --muted: oklch(0.27 0.016 265);
+  --muted-foreground: oklch(0.70 0.015 265);
+  --accent: oklch(0.30 0.04 184);
+  --accent-foreground: oklch(0.92 0.04 184);
+
+  --destructive: oklch(0.65 0.19 27);
+  --destructive-foreground: oklch(0.98 0.01 27);
+  --warning: oklch(0.76 0.15 70);
+  --warning-foreground: oklch(0.20 0.05 70);
+  --success: oklch(0.70 0.14 150);
+  --success-foreground: oklch(0.18 0.04 150);
+
+  --border: oklch(0.30 0.014 265);
+  --input: oklch(0.32 0.014 265);
+  --ring: oklch(0.72 0.12 184);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* An address is copied by hand more often than it is read, so it is set in
+     a face where a zero cannot be mistaken for an O. */
+  .address {
+    font-family: var(--font-mono);
+    font-variant-ligatures: none;
+    letter-spacing: 0.01em;
+  }
+}

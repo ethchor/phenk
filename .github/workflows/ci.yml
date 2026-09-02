@@ -41,6 +41,31 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install frontend dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify the API client types are current
+        run: |
+          npm run api
+          if ! git diff --quiet -- packages/ui/src/api/schema.d.ts; then
+            echo "The generated API client is stale. Run 'npm run api' and commit the result."
+            git --no-pager diff -- packages/ui/src/api/schema.d.ts
+            exit 1
+          fi
+
+      - name: Typecheck the frontend
+        run: npm run typecheck
+
+      # The inbox app is embedded into the binary, so it is built before the Go
+      # build and tests rather than alongside them. Building it here is also
+      # what guarantees the embedded assets can never be stale.
+      - name: Build the inbox app
+        run: npm run build --workspace web
+
       - name: Check formatting
         run: |
           unformatted="$(gofmt -l . | grep -v '^internal/web/dist/' || true)"

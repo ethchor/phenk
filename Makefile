@@ -6,6 +6,7 @@ PKGS    := ./...
 help:
 	@echo "make preflight   run CI's own steps locally (the only gate that matters)"
 	@echo "make generate    regenerate API stubs from api/openapi.yaml"
+	@echo "make web         build the inbox app into internal/web/dist"
 	@echo "make build       build the phenk binary"
 	@echo "make test        run the Go test suite"
 	@echo "make fmt         gofmt the tree"
@@ -25,8 +26,14 @@ preflight:
 generate:
 	$(GO) generate ./...
 
+# The inbox app is embedded into the binary, so a build depends on it.
+.PHONY: web
+web:
+	npm ci --no-audit --no-fund
+	npm run build --workspace web
+
 .PHONY: build
-build:
+build: web
 	$(GO) build -o $(BIN) ./cmd/phenk
 
 .PHONY: test
