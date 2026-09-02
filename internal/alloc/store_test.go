@@ -11,40 +11,42 @@ import (
 	"github.com/ethchor/phenk/internal/core"
 	"github.com/ethchor/phenk/internal/crypto"
 	"github.com/ethchor/phenk/internal/store/pg"
+	"github.com/ethchor/phenk/internal/testsupport/pgtest"
 )
-
-const defaultTestDSN = "postgres://phenk:phenk@127.0.0.1:5432/phenk_test?sslmode=disable"
 
 var testDB *pg.DB
 
 func TestMain(m *testing.M) {
-	dsn := os.Getenv("PHENK_TEST_DSN")
-	if dsn == "" {
-		dsn = defaultTestDSN
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	db, err := pg.Open(ctx, dsn, 8)
-	cancel()
-	if err != nil {
-		if os.Getenv("PHENK_TEST_REQUIRED") != "" {
-			panic("PHENK_TEST_REQUIRED is set but the test database is unreachable: " + err.Error())
+	// Each test package gets its own database: `go test ./...` runs packages in
+	// parallel and every storage test truncates the tables it uses, so one
+	// shared database means one package deleting another package's fixtures
+	// halfway through a test.
+	setupCtx, cancelSetup := context.WithTimeout(context.Background(), 30*time.Second)
+	dsn, err := pgtest.DatabaseFor(setupCtx, "alloc")
+	cancelSetup()
+	if err == nil {
+		var db *pg.DB
+		openCtx, cancelOpen := context.WithTimeout(context.Background(), 15*time.Second)
+		db, err = pg.Open(openCtx, dsn, 16)
+		cancelOpen()
+		if err == nil {
+			defer db.Close()
+			migrateCtx, cancelMigrate := context.WithTimeout(context.Background(), 60*time.Second)
+			err = db.Migrate(migrateCtx)
+			cancelMigrate()
+			if err == nil {
+				testDB = db
+				os.Exit(runSuite(m))
+			}
 		}
-		os.Stderr.WriteString("alloc: skipping database tests, no database at " + dsn + "\n")
-		// The pure address-generation tests do not need a database, so they
-		// still run.
-		os.Exit(m.Run())
 	}
-	defer db.Close()
 
-	migrateCtx, cancelMigrate := context.WithTimeout(context.Background(), 60*time.Second)
-	if err := db.Migrate(migrateCtx); err != nil {
-		cancelMigrate()
-		panic("alloc: migrating test database: " + err.Error())
+	if pgtest.Required() {
+		panic("PHENK_TEST_REQUIRED is set but the test database is unusable: " + err.Error())
 	}
-	cancelMigrate()
-
-	testDB = db
-	os.Exit(m.Run())
+	os.Stderr.WriteString("alloc: skipping database tests: " + err.Error() + "\n")
+	// The tests that need no database still run.
+	os.Exit(runSuite(m))
 }
 
 func requireDB(t *testing.T) *pg.DB {
@@ -345,3 +347,7 @@ func TestConcurrentProvisionCreatesOneIdentity(t *testing.T) {
 
 // mustAddr parses an IP that is known good at compile time.
 func mustAddr(s string) netip.Addr { return netip.MustParseAddr(s) }
+
+// runSuite exists so TestMain has a single exit point whether or not a
+// database was available.
+func runSuite(m *testing.M) int { return m.Run() }

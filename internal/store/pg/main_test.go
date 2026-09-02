@@ -5,45 +5,45 @@ import (
 	"os"
 	"testing"
 	"time"
-)
 
-// defaultTestDSN points at the database docker-compose brings up, so a
-// developer who has run `make dev-db` can run the storage tests with no extra
-// setup. Override it with PHENK_TEST_DSN.
-const defaultTestDSN = "postgres://phenk:phenk@127.0.0.1:5432/phenk_test?sslmode=disable"
+	"github.com/ethchor/phenk/internal/testsupport/pgtest"
+)
 
 var testDB *DB
 
 func TestMain(m *testing.M) {
-	dsn := os.Getenv("PHENK_TEST_DSN")
-	if dsn == "" {
-		dsn = defaultTestDSN
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	db, err := Open(ctx, dsn, 8)
-	cancel()
-	if err != nil {
-		// A developer without Postgres running still gets a green `go test
-		// ./...`; CI sets PHENK_TEST_REQUIRED so a missing database is a
-		// failure there rather than a silent gap in coverage.
-		if os.Getenv("PHENK_TEST_REQUIRED") != "" {
-			panic("PHENK_TEST_REQUIRED is set but the test database is unreachable: " + err.Error())
+	// Each test package gets its own database. `go test ./...` runs packages
+	// in parallel and every storage test starts by truncating the tables it
+	// uses, so one shared database means one package deleting another
+	// package's fixtures halfway through a test.
+	setupCtx, cancelSetup := context.WithTimeout(context.Background(), 30*time.Second)
+	dsn, err := pgtest.DatabaseFor(setupCtx, "store")
+	cancelSetup()
+	if err == nil {
+		var db *DB
+		openCtx, cancelOpen := context.WithTimeout(context.Background(), 15*time.Second)
+		db, err = Open(openCtx, dsn, 8)
+		cancelOpen()
+		if err == nil {
+			defer db.Close()
+			migrateCtx, cancelMigrate := context.WithTimeout(context.Background(), 60*time.Second)
+			err = db.Migrate(migrateCtx)
+			cancelMigrate()
+			if err == nil {
+				testDB = db
+				os.Exit(m.Run())
+			}
 		}
-		os.Stderr.WriteString("pg: skipping storage tests, no database at " + dsn + "\n")
-		os.Exit(0)
 	}
-	defer db.Close()
 
-	migrateCtx, cancelMigrate := context.WithTimeout(context.Background(), 60*time.Second)
-	if err := db.Migrate(migrateCtx); err != nil {
-		cancelMigrate()
-		panic("pg: migrating test database: " + err.Error())
+	// A developer without Postgres running still gets a green `go test ./...`.
+	// CI sets PHENK_TEST_REQUIRED so a missing database is a failure there
+	// rather than a silent gap in coverage.
+	if pgtest.Required() {
+		panic("PHENK_TEST_REQUIRED is set but the test database is unusable: " + err.Error())
 	}
-	cancelMigrate()
-
-	testDB = db
-	os.Exit(m.Run())
+	os.Stderr.WriteString("pg: skipping storage tests: " + err.Error() + "\n")
+	os.Exit(0)
 }
 
 // reset empties every table a test may write to. blocked_local_parts is left
