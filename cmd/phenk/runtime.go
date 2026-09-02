@@ -8,10 +8,13 @@ import (
 
 	"github.com/ethchor/phenk/internal/alloc"
 	"github.com/ethchor/phenk/internal/config"
+	"github.com/ethchor/phenk/internal/core"
 	"github.com/ethchor/phenk/internal/crypto"
 	"github.com/ethchor/phenk/internal/smtpd"
 	"github.com/ethchor/phenk/internal/store/blob"
 	"github.com/ethchor/phenk/internal/store/pg"
+	"github.com/ethchor/phenk/internal/worker/parse"
+	"github.com/ethchor/phenk/internal/worker/queue"
 )
 
 // runtime is the set of dependencies every run mode shares.
@@ -58,6 +61,16 @@ func (r *runtime) runSMTPD(ctx context.Context) error {
 		return err
 	}
 
+	// The listener enqueues parse jobs but never runs them: a process
+	// accepting mail must not spend its capacity on parsing it.
+	if err := queue.Migrate(ctx, r.db); err != nil {
+		return err
+	}
+	inserter, err := queue.NewInserter(r.db)
+	if err != nil {
+		return err
+	}
+
 	server := smtpd.New(smtpd.Config{
 		Addr:                  r.cfg.SMTP.Addr,
 		Hostname:              r.cfg.SMTP.Hostname,
@@ -70,6 +83,9 @@ func (r *runtime) runSMTPD(ctx context.Context) error {
 		ProvisionsPerIPHour:   r.cfg.SMTP.ProvisionsPerIPHour,
 		GlobalProvisionsHour:  r.cfg.SMTP.GlobalProvisionsHour,
 		TLSConfig:             tlsConfig,
+		Enqueue: func(ctx context.Context, q pg.Querier, deliveryID core.UUID) error {
+			return parse.Enqueue(ctx, inserter, q, deliveryID)
+		},
 	}, r.db, r.blobs, r.allocator)
 
 	return server.ListenAndServe(ctx)

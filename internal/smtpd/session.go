@@ -217,7 +217,6 @@ func (s *session) Data(r io.Reader) error {
 	// Only now, with the write durable, is the message acknowledged.
 	s.logger().Info("accepted message",
 		"from", s.from, "recipients", len(s.recipients), "size_bytes", size, "tls", msg.TLS)
-	s.server.notifyParse(s.ctx, msg)
 	return nil
 }
 

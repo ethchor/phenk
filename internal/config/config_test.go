@@ -137,3 +137,28 @@ func TestMasterKeyBytes(t *testing.T) {
 		t.Fatalf("key is %d bytes, want %d", len(key), crypto.KeySize)
 	}
 }
+
+func TestWorkerDefaults(t *testing.T) {
+	setRequired(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Worker.MaxWorkers != 4 {
+		t.Errorf("max workers = %d, want 4", cfg.Worker.MaxWorkers)
+	}
+	if cfg.Worker.MaxAttachmentBytes != 25<<20 {
+		t.Errorf("max attachment bytes = %d, want 25MiB", cfg.Worker.MaxAttachmentBytes)
+	}
+	if cfg.Worker.ShutdownTimeout() != 30*time.Second {
+		t.Errorf("shutdown grace = %v, want 30s", cfg.Worker.ShutdownTimeout())
+	}
+}
+
+func TestValidateRejectsZeroWorkers(t *testing.T) {
+	setRequired(t)
+	t.Setenv("PHENK_WORKER_MAX_WORKERS", "0")
+	if _, err := Load(); err == nil {
+		t.Fatal("accepted a worker pool that would run nothing")
+	}
+}

@@ -27,7 +27,25 @@ type Config struct {
 	SMTP     SMTP       `envPrefix:"PHENK_SMTP_"`
 	API      API        `envPrefix:"PHENK_API_"`
 	Identity Identity   `envPrefix:"PHENK_IDENTITY_"`
+	Worker   Worker     `envPrefix:"PHENK_WORKER_"`
 }
+
+// Worker configures the job queue.
+type Worker struct {
+	// MaxWorkers is how many jobs run at once. Parsing is CPU and memory
+	// bound rather than IO bound, so this wants to track cores rather than
+	// database connections.
+	MaxWorkers int `env:"MAX_WORKERS" envDefault:"4"`
+
+	// MaxAttachmentBytes caps a single extracted attachment.
+	MaxAttachmentBytes int64 `env:"MAX_ATTACHMENT_BYTES" envDefault:"26214400"`
+
+	// ShutdownGrace is how long in-flight jobs get to finish on shutdown.
+	ShutdownGrace time.Duration `env:"SHUTDOWN_GRACE" envDefault:"30s"`
+}
+
+// ShutdownTimeout is how long a stopping worker waits for in-flight jobs.
+func (w Worker) ShutdownTimeout() time.Duration { return w.ShutdownGrace }
 
 // Database is the Postgres connection.
 type Database struct {
@@ -128,6 +146,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Identity.DefaultTTL > c.Identity.MaxTTL {
 		problems = append(problems, errors.New("PHENK_IDENTITY_DEFAULT_TTL must not exceed PHENK_IDENTITY_MAX_TTL"))
+	}
+	if c.Worker.MaxWorkers < 1 {
+		problems = append(problems, errors.New("PHENK_WORKER_MAX_WORKERS must be at least 1"))
 	}
 	if (c.SMTP.TLSCertFile == "") != (c.SMTP.TLSKeyFile == "") {
 		problems = append(problems, errors.New("PHENK_SMTP_TLS_CERT_FILE and PHENK_SMTP_TLS_KEY_FILE must be set together"))
