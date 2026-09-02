@@ -8,6 +8,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/ethchor/phenk/internal/sanitize"
+	"github.com/ethchor/phenk/internal/worker/lifecycle"
 	"github.com/ethchor/phenk/internal/worker/parse"
 	"github.com/ethchor/phenk/internal/worker/queue"
 )
@@ -20,8 +21,10 @@ func (r *runtime) runWorker(ctx context.Context) error {
 
 	workers := river.NewWorkers()
 	river.AddWorker(workers, parse.NewWorker(r.parser()))
+	lifecycle.Register(workers, r.lifecycle())
 
-	client, err := queue.NewWorker(r.db, workers, r.cfg.Worker.MaxWorkers)
+	client, err := queue.NewWorker(r.db, workers, r.cfg.Worker.MaxWorkers,
+		lifecycle.PeriodicJobs()...)
 	if err != nil {
 		return err
 	}
@@ -40,6 +43,16 @@ func (r *runtime) runWorker(ctx context.Context) error {
 		return fmt.Errorf("worker: stopping: %w", err)
 	}
 	return nil
+}
+
+// lifecycle builds the runner behind the expiry, purge and retention jobs.
+func (r *runtime) lifecycle() *lifecycle.Runner {
+	return lifecycle.New(r.db, r.blobs, lifecycle.Options{
+		PurgeGrace:     r.cfg.Identity.PurgeGrace,
+		ReservePeriod:  r.cfg.Identity.ReservePeriod,
+		ExpiringNotice: r.cfg.Identity.ExpiringNotice,
+		NamedRetention: r.cfg.Identity.NamedRetention,
+	})
 }
 
 // parser builds the message parser.

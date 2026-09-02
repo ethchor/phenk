@@ -46,8 +46,9 @@ func NewInserter(db *pg.DB) (*Client, error) {
 	return client, nil
 }
 
-// NewWorker builds a client that runs jobs from the default queue.
-func NewWorker(db *pg.DB, workers *river.Workers, maxWorkers int) (*Client, error) {
+// NewWorker builds a client that runs jobs from the default queue, plus any
+// periodic jobs it is given.
+func NewWorker(db *pg.DB, workers *river.Workers, maxWorkers int, periodic ...*river.PeriodicJob) (*Client, error) {
 	if maxWorkers <= 0 {
 		maxWorkers = 4
 	}
@@ -57,6 +58,10 @@ func NewWorker(db *pg.DB, workers *river.Workers, maxWorkers int) (*Client, erro
 		Queues: map[string]river.QueueConfig{
 			river.QueueDefault: {MaxWorkers: maxWorkers},
 		},
+		// River elects one leader across every worker process, and only the
+		// leader inserts periodic jobs. Running several workers therefore does
+		// not run the lifecycle jobs several times over.
+		PeriodicJobs: periodic,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("queue: building worker: %w", err)
