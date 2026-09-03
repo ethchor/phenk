@@ -216,6 +216,9 @@ func TestProxyRefusesARedirectToAPrivateAddress(t *testing.T) {
 	}
 }
 
+// originHost returns the IP an httptest server listens on. The proxy checks
+// addresses after resolution, so the allowance is keyed by address rather than
+// by name.
 func originHost(t *testing.T, rawURL string) string {
 	t.Helper()
 	parsed, err := url.Parse(rawURL)
@@ -227,4 +230,53 @@ func originHost(t *testing.T, rawURL string) string {
 		return parsed.Host
 	}
 	return host
+}
+
+func TestProxyFetchesAnImageByHostname(t *testing.T) {
+	// The regression this exists for: an earlier version checked the address
+	// in a DialContext override, which is handed the hostname rather than the
+	// resolved address. Every literal IP behaved correctly and every real
+	// image — which is to say every image — was refused as unparseable.
+	//
+	// "localhost" resolves to loopback, which the test allowance permits, so
+	// this exercises a named host end to end without weakening the rule.
+	h := newHarness(t)
+	c := h.anonymous()
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("\x89PNG\r\n\x1a\n"))
+	}))
+	defer origin.Close()
+	h.server.images = newImageProxyAllowing(h.server.sanitizer, "127.0.0.1", "::1")
+
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(origin.URL, "http://"))
+	if err != nil {
+		t.Fatalf("splitting the test origin: %v", err)
+	}
+	target := "http://localhost:" + port + "/logo.png"
+
+	path := "/i/" + h.server.sanitizer.Sign(target) + "?u=" + url.QueryEscape(target)
+	response := c.do(http.MethodGet, path, nil)
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: a hostname that resolves to an allowed address was refused", response.StatusCode)
+	}
+}
+
+func TestProxyRefusesAHostnameThatResolvesPrivately(t *testing.T) {
+	// The check runs after resolution, so a name pointing into the network is
+	// refused even though the name itself says nothing.
+	h := newHarness(t)
+	c := h.anonymous()
+	// No allowance here: loopback is private, and localhost resolves to it.
+	target := "http://localhost:9/secret"
+
+	path := "/i/" + h.server.sanitizer.Sign(target) + "?u=" + url.QueryEscape(target)
+	response := c.do(http.MethodGet, path, nil)
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("status %d, want 403", response.StatusCode)
+	}
 }

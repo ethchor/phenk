@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ethchor/phenk/internal/api/apigen"
@@ -52,38 +53,52 @@ func newImageProxy(sanitizer *sanitize.Sanitizer) *imageProxy {
 }
 
 // newImageProxyAllowing builds a proxy that additionally permits a fixed set of
-// hosts.
+// IP addresses.
 //
 // Only tests use the allowance, and only to reach an httptest server, which
 // necessarily listens on loopback. Weakening isPublicAddress to accommodate
 // that would have meant testing something other than the code that runs in
 // production.
 func newImageProxyAllowing(sanitizer *sanitize.Sanitizer, allowed ...string) *imageProxy {
-	permitted := make(map[string]bool, len(allowed))
-	for _, host := range allowed {
-		permitted[host] = true
+	permitted := make(map[netip.Addr]bool, len(allowed))
+	for _, address := range allowed {
+		if addr, err := netip.ParseAddr(address); err == nil {
+			permitted[addr.Unmap()] = true
+		}
 	}
-	dialer := &net.Dialer{Timeout: proxyTimeout}
 
-	transport := &http.Transport{
-		// Control returns after resolution and immediately before connecting,
-		// so a hostname that resolves to a private address is refused at the
-		// only moment where the address is both known and not yet dialled.
-		// Checking the hostname earlier would lose to DNS rebinding.
-		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+	dialer := &net.Dialer{
+		Timeout: proxyTimeout,
+		// ControlContext runs after the name has been resolved and immediately
+		// before the socket connects, which is the only moment where the
+		// address is both known and not yet dialled. That ordering is the
+		// whole defence: checking the hostname beforehand would resolve it
+		// once for the check and again for the connection, and a name that
+		// answers differently the second time — DNS rebinding — would walk
+		// straight through.
+		//
+		// A DialContext override would not do: it is handed the hostname, not
+		// the address, so it can only ever refuse literal IPs and would reject
+		// every real image along with them.
+		ControlContext: func(_ context.Context, _, address string, _ syscall.RawConn) error {
 			host, _, err := net.SplitHostPort(address)
 			if err != nil {
-				return nil, err
+				return fmt.Errorf("%w: %s", errBlockedAddress, address)
 			}
 			addr, err := netip.ParseAddr(host)
 			if err != nil {
-				return nil, fmt.Errorf("%w: %s", errBlockedAddress, host)
+				return fmt.Errorf("%w: %s", errBlockedAddress, host)
 			}
-			if !isPublicAddress(addr) && !permitted[host] {
-				return nil, fmt.Errorf("%w: %s", errBlockedAddress, addr)
+			addr = addr.Unmap()
+			if !isPublicAddress(addr) && !permitted[addr] {
+				return fmt.Errorf("%w: %s", errBlockedAddress, addr)
 			}
-			return dialer.DialContext(ctx, network, address)
+			return nil
 		},
+	}
+
+	transport := &http.Transport{
+		DialContext:           dialer.DialContext,
 		DisableKeepAlives:     true,
 		TLSHandshakeTimeout:   proxyTimeout,
 		ResponseHeaderTimeout: proxyTimeout,
