@@ -61,7 +61,9 @@ What you actually need:
 - a static IP
 - **editable reverse DNS (PTR)** on that IP — some senders reject mail from
   hosts with no PTR, and this is the single most commonly missed requirement
-- enough disk for the blob store, or R2 once the S3 backend lands
+- enough disk for the blob store. Only the `fs` backend exists in v0 —
+  `PHENK_BLOB_BACKEND` rejects anything else — so plan capacity on local disk
+  and do not count on R2 or S3 being available
 
 Do not take any list of providers on trust, this one included. Run the check:
 
@@ -82,7 +84,7 @@ Cloudflare in front of them; the mail records may not.
 |---|---|---|---|---|
 | `A` | `mx1` | `203.0.113.10` | **DNS only** | The mail host. Must not be proxied. |
 | `MX` | `@` | `mx1.yourdomain.example` (priority 10) | n/a | Points at the A record above, never at an IP. |
-| `A` | `app` | `203.0.113.10` | proxied ok | The inbox app. |
+| `A` | `app` | `203.0.113.10` | grey to start | The inbox app. Proxying it needs SSL/TLS mode **Full (strict)** — see below. |
 | `TXT` | `@` | `v=spf1 -all` | n/a | See below. |
 | `TXT` | `_dmarc` | `v=DMARC1; p=reject; rua=mailto:dmarc@yourdomain.example` | n/a | See below. |
 
@@ -106,6 +108,33 @@ Without `--apply` it prints what it would change and touches nothing. Add
 `--public` for a public-pool domain, which gets the mail records and no `app`
 record. Setting the records by hand in the dashboard is equally fine; the
 script exists so the mail ones cannot be got subtly wrong.
+
+### Two zone settings that are not records
+
+Both of these break mail or the app in ways no record can express, because
+neither is a record.
+
+**Email Routing must be off.** Cloudflare's DNS troubleshooting page: "If Email
+Routing is turned on, Cloudflare manages your MX records and may create
+additional DNS records automatically." It puts its own MX on the root domain
+and its own `v=spf1 include:_spf.mx.cloudflare.net ~all` alongside — which is
+the opposite of the `v=spf1 -all` above — and then *locks* those records, so
+they cannot be edited or deleted from the DNS page until unlocked. Turn it off
+under **Email Service > Email Routing > Settings > Disable Email Routing**.
+`scripts/cloudflare-dns.sh` checks this and refuses to run if it is on, when the
+token can see it.
+
+**If `app` is proxied, the SSL/TLS mode must be Full (strict).** Caddy serves
+real HTTPS at the origin and redirects HTTP to HTTPS, and Cloudflare is explicit
+about what Flexible does to such an origin: "Because Cloudflare connects to your
+origin over HTTP, this creates a redirect loop that makes your site
+inaccessible." The result is `ERR_TOO_MANY_REDIRECTS` and nothing else.
+
+The simplest order is to leave `app` grey-clouded until Caddy has issued its
+certificate — ACME's HTTP challenge is then unambiguous — and turn the proxy on
+afterwards, with the mode already set to Full (strict). Staying grey-clouded
+forever is also fine; the proxy buys caching and DDoS protection for the inbox
+app, not correctness.
 
 ### Why SPF and DMARC on a domain that sends nothing
 
