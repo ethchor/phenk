@@ -90,6 +90,23 @@ Set the PTR record for `203.0.113.10` to `mx1.yourdomain.example` in your
 host's control panel, not in Cloudflare — reverse DNS is delegated by whoever
 owns the IP block.
 
+### Applying them
+
+`scripts/cloudflare-dns.sh` is the table above, executable and idempotent. It
+will not leave a mail record proxied, which is the one mistake here that fails
+silently:
+
+```sh
+export CLOUDFLARE_API_TOKEN=...   # Zone > DNS > Edit, scoped to this zone
+scripts/cloudflare-dns.sh --domain yourdomain.example --ip 203.0.113.10
+scripts/cloudflare-dns.sh --domain yourdomain.example --ip 203.0.113.10 --apply
+```
+
+Without `--apply` it prints what it would change and touches nothing. Add
+`--public` for a public-pool domain, which gets the mail records and no `app`
+record. Setting the records by hand in the dashboard is equally fine; the
+script exists so the mail ones cannot be got subtly wrong.
+
 ### Why SPF and DMARC on a domain that sends nothing
 
 Publishing `v=spf1 -all` says: nothing is authorised to send mail as this
