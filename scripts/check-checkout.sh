@@ -73,3 +73,29 @@ if [ ${#problems[@]} -gt 0 ]; then
 fi
 
 echo "the working tree matches the repository"
+
+# The list above cannot catch everything. A generated directory has to be
+# allowed, and a file the build needs can then hide inside one — which is
+# exactly how internal/web/dist/.gitkeep went missing, leaving a clean checkout
+# unable to compile at all because its go:embed pattern matched nothing.
+#
+# So the second half of this check stops reasoning about which files matter and
+# simply builds the committed tree. It needs no database, no Node, and nothing
+# from the network beyond the module cache.
+echo
+echo "building a pristine checkout of HEAD"
+
+workspace="$(mktemp -d)"
+trap 'rm -rf "$workspace"' EXIT
+
+git archive HEAD | tar -x -C "$workspace"
+
+if ! (cd "$workspace" && go build ./... && go vet ./...); then
+  echo
+  echo "A clean checkout of HEAD does not build, even though the working tree"
+  echo "does. Something the build needs is present on your machine but missing"
+  echo "from the repository."
+  exit 1
+fi
+
+echo "a pristine checkout of HEAD builds"
