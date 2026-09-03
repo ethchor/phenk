@@ -169,24 +169,46 @@ changes=0
 #
 #   $1 type   $2 name (fqdn)   $3 content   $4 proxied (true|false)
 #   $5 extra JSON merged into the body, for MX priority
+#   $6 regex selecting which existing record this call owns, when a name can
+#      hold more than one (apex TXT). Empty means "the only one".
 upsert() {
 	rtype="$1"
 	name="$2"
 	content="$3"
 	proxied="$4"
-	extra="${5:-{\}}"
+	# Not `${5:-{\}}`. That relies on how a backslash before the closing brace
+	# is treated inside a default-value expansion, which differs between bash
+	# versions — bash 5 yields `{}`, bash 3.2 (what macOS ships) yields `{\}`,
+	# which jq rejects as invalid JSON. Written out, it is the same on every
+	# shell.
+	extra="${5:-}"
+	[ -n "$extra" ] || extra='{}'
+	selector="${6:-}"
 
 	existing="$(cf GET "/zones/$zone_id/dns_records?type=$rtype&name=$name")"
 	check "$existing" "the lookup for $rtype $name"
 
-	# Read back with an explicit emptiness test rather than jq's `//`, which
-	# treats `false` as absent. `proxied: false` is the value that matters most
-	# here, and reading it as empty makes every record look changed — the
-	# script would rewrite all of them on every run and never converge.
-	fields="$(printf '%s' "$existing" | jq -r '
-	  if (.result | length) > 0 then
-	    .result[0] | [.id, .content, (.proxied | tostring), ((.priority // "-") | tostring)]
-	  else ["", "", "", ""] end | @tsv')"
+	# Pick the record this call means, not whichever one the API happens to
+	# return first. A zone apex routinely holds several TXT records —
+	# google-site-verification, MS=, atlassian-domain-verification — and taking
+	# `.result[0]` would rewrite a stranger's verification record into our SPF
+	# value, destroying whatever depended on it. A and MX pass no selector,
+	# where an empty pattern matches everything and the first record is right,
+	# because the caller means the only one.
+	#
+	# Content is unquoted first: the API returns TXT quoted in some responses
+	# and bare in others, and comparing a quoted read against a bare value makes
+	# an identical record look changed on every run.
+	#
+	# The emptiness test is explicit rather than jq's `//`, which treats `false`
+	# as absent. `proxied: false` is the value that matters most here, and
+	# reading it as empty would make every record look changed.
+	fields="$(printf '%s' "$existing" | jq -r --arg sel "$selector" '
+	  def unquote: gsub("^\"|\"$"; "");
+	  [ .result[]? | select((.content | unquote) | test($sel)) ] | .[0] as $r
+	  | if $r then
+	      [$r.id, ($r.content | unquote), ($r.proxied | tostring), (($r.priority // "-") | tostring)]
+	    else ["", "", "", ""] end | @tsv')"
 	# Tab-separated, because TXT content contains spaces.
 	IFS=$'\t' read -r record_id current_content current_proxied current_priority <<<"$fields"
 
@@ -235,8 +257,10 @@ upsert MX "$domain" "$mail_fqdn" false "$(jq -nc --argjson p "$mx_priority" '{pr
 # Nothing is authorised to send as this domain, because nothing sends as this
 # domain. A receive-only domain that publishes no SPF is a free identity for
 # anyone who wants one.
-upsert TXT "$domain" "v=spf1 -all" false
-upsert TXT "_dmarc.$domain" "v=DMARC1; p=reject; rua=mailto:$dmarc_email" false
+# The selectors matter: without them these two would target whatever TXT record
+# the apex returns first, which is very unlikely to be ours.
+upsert TXT "$domain" "v=spf1 -all" false '{}' '^v=spf1'
+upsert TXT "_dmarc.$domain" "v=DMARC1; p=reject; rua=mailto:$dmarc_email" false '{}' '^v=DMARC1' 
 
 # Public-pool domains host mail and nothing else. The inbox app lives on one
 # hostname regardless of how many domains hand out addresses.
