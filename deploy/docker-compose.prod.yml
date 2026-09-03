@@ -1,0 +1,113 @@
+# Production stack for a single host.
+#
+# Four containers: Phenk, PostgreSQL, Caddy for TLS, and a small loop that
+# copies the certificate Caddy issued into a volume the SMTP listener reads. One
+# certificate serves the web tier and the mail listener, so there is one thing
+# to renew rather than two.
+#
+# Port 25 is published directly rather than through Caddy. Nothing proxies SMTP
+# here: a reverse proxy in front of the listener would replace the sender's
+# address with its own, and the sender's address is what SPF is evaluated
+# against.
+
+name: phenk
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: phenk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: phenk
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phenk"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Not published. Only Phenk talks to it, over the compose network.
+    expose:
+      - "5432"
+
+  phenk:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PHENK_ENV: production
+      PHENK_LOG_LEVEL: info
+      PHENK_DATABASE_URL: postgres://phenk:${POSTGRES_PASSWORD}@postgres:5432/phenk?sslmode=disable
+      # Losing this destroys every inbox, which is the point of it. Keep it out
+      # of source control and out of anything that logs its environment.
+      PHENK_MASTER_KEY: ${PHENK_MASTER_KEY:?generate one with `phenk genkey`}
+
+      PHENK_BLOB_DIR: /var/lib/phenk/blobs
+      # 2525, not 25. The image runs as an unprivileged user, which cannot bind
+      # a port below 1024; the published mapping below puts it on 25 as far as
+      # any sender is concerned. Granting the container CAP_NET_BIND_SERVICE
+      # instead would work and would buy nothing.
+      PHENK_SMTP_ADDR: ":2525"
+      PHENK_SMTP_HOSTNAME: ${MAIL_HOSTNAME:?set MAIL_HOSTNAME, e.g. mx1.yourdomain.example}
+      # Written by the certsync service once Caddy has a certificate. The
+      # listener starts without STARTTLS if it is not there yet and picks it up
+      # on restart; after that it re-reads the file whenever it is renewed.
+      PHENK_SMTP_TLS_CERT_FILE: /etc/phenk/tls/cert.pem
+      PHENK_SMTP_TLS_KEY_FILE: /etc/phenk/tls/key.pem
+
+      PHENK_API_ADDR: ":8080"
+      PHENK_API_PUBLIC_URL: https://${APP_HOSTNAME:?set APP_HOSTNAME}
+      PHENK_API_COOKIE_SECURE: "true"
+    volumes:
+      - blob-data:/var/lib/phenk/blobs
+      - tls-certs:/etc/phenk/tls:ro
+    ports:
+      # Bound on all interfaces: this is the MX, and senders have to reach it.
+      - "25:2525"
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - phenk
+    environment:
+      APP_HOSTNAME: ${APP_HOSTNAME}
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL for Let's Encrypt notices}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+
+  # Caddy keeps certificates in its own storage and has no way to write one to
+  # a path of your choosing, so this bridges the two. It is a shell loop in the
+  # image Caddy already ships, which is the cheapest correct answer available.
+  certsync:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - caddy
+    entrypoint: ["/bin/sh", "/usr/local/bin/export-cert.sh"]
+    environment:
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME}
+    volumes:
+      - ./export-cert.sh:/usr/local/bin/export-cert.sh:ro
+      - caddy-data:/caddy-data:ro
+      - tls-certs:/srv/tls
+
+volumes:
+  postgres-data:
+  blob-data:
+  caddy-data:
+  caddy-config:
+  tls-certs:

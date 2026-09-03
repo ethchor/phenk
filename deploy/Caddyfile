@@ -1,0 +1,34 @@
+# TLS for the inbox app, and the certificate the SMTP listener uses.
+#
+# Caddy obtains a certificate for both names. The mail hostname has no site of
+# its own to serve, but issuing a certificate for it is what lets the SMTP
+# listener present the right name during STARTTLS — a sender that checks will
+# compare it against the MX record.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$APP_HOSTNAME} {
+	encode zstd gzip
+
+	# Everything is served by the Phenk binary: the API, and the inbox app
+	# embedded inside it. There is no separate static host.
+	reverse_proxy phenk:8080 {
+		# Long polls and event streams hold a response open on purpose.
+		flush_interval -1
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}
+
+# Issued so the mail listener has a certificate under its own name. It serves
+# nothing over HTTP beyond what ACME needs.
+{$MAIL_HOSTNAME} {
+	respond "phenk" 200
+}

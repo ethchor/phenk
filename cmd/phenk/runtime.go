@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
-	"fmt"
 	"time"
 
 	"github.com/ethchor/phenk/internal/alloc"
@@ -89,21 +87,4 @@ func (r *runtime) runSMTPD(ctx context.Context) error {
 	}, r.db, r.blobs, r.allocator, r.keyring)
 
 	return server.ListenAndServe(ctx)
-}
-
-// loadTLS reads the certificate the SMTP listener offers for STARTTLS. Config
-// validation has already established that the two file paths are set together
-// or not at all.
-func loadTLS(cfg *config.Config) (*tls.Config, error) {
-	if cfg.SMTP.TLSCertFile == "" {
-		return nil, nil
-	}
-	cert, err := tls.LoadX509KeyPair(cfg.SMTP.TLSCertFile, cfg.SMTP.TLSKeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("loading smtp tls certificate: %w", err)
-	}
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
-	}, nil
 }
