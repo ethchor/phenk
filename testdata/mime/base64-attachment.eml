@@ -1,0 +1,21 @@
+From: Billing <billing@example.com>
+To: k7f2m9x3qz@phenk.test
+Subject: Your invoice
+Date: Thu, 05 Jan 2006 08:30:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix"
+
+--mix
+Content-Type: text/plain; charset=utf-8
+
+Invoice attached.
+
+--mix
+Content-Type: application/pdf; name="invoice.pdf"
+Content-Disposition: attachment; filename="invoice.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyA+PgplbmRvYmoKdHJhaWxlcgolJUVP
+Rgo=
+
+--mix--

@@ -1,0 +1,10 @@
+From: not a valid address at all
+To:
+Subject: Broken but readable
+Date: yesterday afternoon
+X-Weird: value with a  control character
+Content-Type: text/plain; charset=definitely-not-a-charset
+
+The headers above are broken. The body should still be readable, because a
+user who cannot read their verification code is not helped by a strictly
+correct refusal.

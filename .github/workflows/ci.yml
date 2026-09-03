@@ -45,6 +45,14 @@ jobs:
         with:
           node-version: "22"
 
+      # Runs before anything is generated, so it compares the checkout against
+      # the repository rather than against the build's own output. In CI a
+      # clean checkout always matches; the value is that preflight replays this
+      # step locally, where a file that exists on disk but was never committed
+      # is exactly the failure it catches.
+      - name: Verify the checkout is complete
+        run: ./scripts/check-checkout.sh
+
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund
 

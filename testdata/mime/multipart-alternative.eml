@@ -1,0 +1,18 @@
+From: Shop <orders@example.com>
+To: k7f2m9x3qz@phenk.test
+Subject: Order confirmed
+Date: Tue, 03 Jan 2006 09:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt-boundary"
+
+--alt-boundary
+Content-Type: text/plain; charset=utf-8
+
+Your order 12345 is confirmed.
+
+--alt-boundary
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Your order <strong>12345</strong> is confirmed.</p></body></html>
+
+--alt-boundary--

