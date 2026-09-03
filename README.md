@@ -143,6 +143,9 @@ docs/               design notes worth keeping
 
 ## Design notes
 
+- [docs/deployment.md](docs/deployment.md) — choosing a host, the DNS record
+  set, and why Cloudflare is the right place for DNS and the wrong place for
+  the mail server.
 - [docs/blob-encryption.md](docs/blob-encryption.md) — why raw messages use
   envelope keys, and the conflict between two of the project's own invariants
   that forced the choice.
