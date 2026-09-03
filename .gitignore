@@ -16,4 +16,10 @@ node_modules/
 .env
 .env.local
 /data/
-*.eml
+
+# The Phase 0 SMTP sink's default output directory. A blanket `*.eml` was
+# here once and silently excluded every golden MIME fixture under testdata/,
+# so the tests passed locally against files that were never committed and
+# failed in CI against a clean checkout. Ignore the directory, never the
+# extension.
+/inbox/

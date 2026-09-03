@@ -1,0 +1,29 @@
+From: Newsletter <news@example.com>
+To: k7f2m9x3qz@phenk.test
+Subject: Weekly digest
+Date: Wed, 04 Jan 2006 12:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed-boundary"
+
+--mixed-boundary
+Content-Type: multipart/alternative; boundary="inner-boundary"
+
+--inner-boundary
+Content-Type: text/plain; charset=utf-8
+
+The plain text digest.
+
+--inner-boundary
+Content-Type: text/html; charset=utf-8
+
+<p>The <em>HTML</em> digest.</p>
+
+--inner-boundary--
+
+--mixed-boundary
+Content-Type: text/plain; charset=utf-8
+Content-Disposition: attachment; filename="notes.txt"
+
+Attached notes.
+
+--mixed-boundary--

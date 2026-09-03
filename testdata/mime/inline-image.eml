@@ -1,0 +1,20 @@
+From: Sender <sender@example.com>
+To: k7f2m9x3qz@phenk.test
+Subject: With a logo
+Date: Wed, 11 Jan 2006 15:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary="rel"
+
+--rel
+Content-Type: text/html; charset=utf-8
+
+<p><img src="cid:logo@example.com"> Hello.</p>
+
+--rel
+Content-Type: image/png
+Content-ID: <logo@example.com>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==
+
+--rel--
