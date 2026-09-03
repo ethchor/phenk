@@ -2,6 +2,10 @@
 bin
 data
 node_modules
-site
 web/node_modules
-*.eml
+*.tsbuildinfo
+
+# The marketing site is deployed separately and never ships to self-hosters.
+# It is excluded here as well as from the build, so it cannot be pulled in by
+# accident.
+site
