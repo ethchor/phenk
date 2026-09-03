@@ -164,3 +164,34 @@ func identityResponse(identity *core.Identity, domainName string) apigen.Identit
 	}
 	return out
 }
+
+// ListDomains implements apigen.ServerInterface.
+//
+// Public information, and deliberately so: someone about to take an address
+// wants to know what it will look like, and someone deciding whether to trust a
+// named inbox wants to know it is on the shared pool. Only allocatable domains
+// are listed — a burned one still receives mail for the identities it already
+// hosts, but nothing new lands there.
+func (s *Server) ListDomains(w http.ResponseWriter, r *http.Request) {
+	out := []apigen.Domain{}
+
+	for _, pool := range []core.Pool{core.PoolRandom, core.PoolPublic} {
+		domains, err := pg.AllocatableDomains(r.Context(), s.db, pool)
+		if err != nil {
+			internalError(w, r, "listing domains", err)
+			return
+		}
+		for _, domain := range domains {
+			out = append(out, apigen.Domain{
+				Name: domain.Name,
+				Pool: apigen.DomainPool(domain.Pool),
+			})
+		}
+	}
+
+	// This one response is safe to cache: it changes when an operator rotates
+	// a domain, not per request, and the marketing site reads it on a
+	// schedule.
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	writeJSON(w, http.StatusOK, out)
+}

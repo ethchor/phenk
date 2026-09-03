@@ -314,6 +314,26 @@ paths:
         '502':
           description: The remote host did not return a usable image.
 
+  /v1/domains:
+    get:
+      operationId: listDomains
+      tags: [identities]
+      summary: List the domains currently handing out addresses
+      description: |
+        Public information: which domains an address might land on, and which
+        pool each belongs to. The pools never mix — `random` domains serve
+        generated addresses and `public` domains serve shared named inboxes —
+        because public inboxes attract far more spam and get blocklisted faster,
+        and separating them contains the damage to the pool that earned it.
+      responses:
+        '200':
+          description: The allocatable domains.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Domain' }
+
   /healthz:
     get:
       operationId: health
@@ -550,6 +570,18 @@ components:
     AuthResult:
       type: string
       enum: [none, pass, fail, softfail, neutral, temperror, permerror]
+
+    Domain:
+      type: object
+      required: [name, pool]
+      properties:
+        name: { type: string }
+        pool:
+          type: string
+          enum: [random, public]
+          description: |
+            `random` serves generated, session-owned addresses. `public` serves
+            shared named inboxes, which anyone who guesses the name can read.
 
     Health:
       type: object

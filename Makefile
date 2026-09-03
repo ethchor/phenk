@@ -7,6 +7,7 @@ help:
 	@echo "make preflight   run CI's own steps locally (the only gate that matters)"
 	@echo "make generate    regenerate API stubs from api/openapi.yaml"
 	@echo "make web         build the inbox app into internal/web/dist"
+	@echo "make site        build the marketing site (never shipped to self-hosters)"
 	@echo "make build       build the phenk binary"
 	@echo "make test        run the Go test suite"
 	@echo "make fmt         gofmt the tree"
@@ -26,11 +27,18 @@ preflight:
 generate:
 	$(GO) generate ./...
 
-# The inbox app is embedded into the binary, so a build depends on it.
+# The inbox app is embedded into the binary, so a build depends on it. The
+# marketing site is not: it is deployed separately and never ships to
+# self-hosters, so `make build` must never depend on it.
 .PHONY: web
 web:
 	npm ci --no-audit --no-fund
 	npm run build --workspace web
+
+.PHONY: site
+site:
+	npm ci --no-audit --no-fund
+	npm run build --workspace site
 
 .PHONY: build
 build: web

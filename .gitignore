@@ -10,6 +10,7 @@
 !/internal/web/dist/.gitkeep
 node_modules/
 .next/
+/site/out/
 *.tsbuildinfo
 
 # Local development

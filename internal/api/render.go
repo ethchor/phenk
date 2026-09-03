@@ -23,9 +23,12 @@ const (
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	// Nothing this API returns should ever be cached by an intermediary: it is
-	// all either private mail or a cursor that moves.
-	w.Header().Set("Cache-Control", "no-store")
+	// Almost nothing this API returns may be cached by an intermediary: it is
+	// private mail or a cursor that moves. The handful of responses that are
+	// public set their own policy before calling this, and are left alone.
+	if w.Header().Get("Cache-Control") == "" {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	w.WriteHeader(status)
 	if body == nil {
 		return

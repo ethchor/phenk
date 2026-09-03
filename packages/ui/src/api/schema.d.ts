@@ -303,6 +303,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the domains currently handing out addresses
+         * @description Public information: which domains an address might land on, and which
+         *     pool each belongs to. The pools never mix — `random` domains serve
+         *     generated addresses and `public` domains serve shared named inboxes —
+         *     because public inboxes attract far more spam and get blocklisted faster,
+         *     and separating them contains the damage to the pool that earned it.
+         */
+        get: operations["listDomains"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -458,6 +482,15 @@ export interface components {
         };
         /** @enum {string} */
         AuthResult: "none" | "pass" | "fail" | "softfail" | "neutral" | "temperror" | "permerror";
+        Domain: {
+            name: string;
+            /**
+             * @description `random` serves generated, session-owned addresses. `public` serves
+             *     shared named inboxes, which anyone who guesses the name can read.
+             * @enum {string}
+             */
+            pool: "random" | "public";
+        };
         Health: {
             /** @enum {string} */
             status: "ok" | "degraded";
@@ -888,6 +921,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    listDomains: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The allocatable domains. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Domain"][];
+                };
             };
         };
     };

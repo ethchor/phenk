@@ -23,7 +23,7 @@ func TestOpenNamedInboxIsStableAndPublic(t *testing.T) {
 	if !strings.HasSuffix(opened.Address, "@pub.test") {
 		t.Errorf("address = %q, want a public-pool domain", opened.Address)
 	}
-	if opened.Kind != apigen.IdentityKindNamed {
+	if opened.Kind != apigen.Named {
 		t.Errorf("kind = %q", opened.Kind)
 	}
 	// The flag every interface uses to warn that anyone who guesses the name
@@ -196,7 +196,7 @@ func TestCreateIdentityWithKindNamedGoesThroughTheSamePath(t *testing.T) {
 	c.decode(c.do(http.MethodPost, "/v1/identities",
 		map[string]any{"kind": "named", "local_part": "invoices"}), http.StatusCreated, &created)
 
-	if created.Kind != apigen.IdentityKindNamed || !created.Public {
+	if created.Kind != apigen.Named || !created.Public {
 		t.Fatalf("identity = %+v", created)
 	}
 	if !strings.HasSuffix(created.Address, "@pub.test") {

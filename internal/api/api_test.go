@@ -12,6 +12,7 @@ import (
 	"github.com/ethchor/phenk/internal/api/apigen"
 	"github.com/ethchor/phenk/internal/core"
 	"github.com/ethchor/phenk/internal/sanitize"
+	"github.com/ethchor/phenk/internal/store/pg"
 )
 
 func TestCreateAndReadAnIdentity(t *testing.T) {
@@ -25,7 +26,7 @@ func TestCreateAndReadAnIdentity(t *testing.T) {
 	if !strings.HasSuffix(created.Address, "@rand.test") {
 		t.Fatalf("address = %q", created.Address)
 	}
-	if created.Kind != apigen.IdentityKindRandom || created.State != apigen.Active {
+	if created.Kind != apigen.Random || created.State != apigen.Active {
 		t.Fatalf("identity = %+v", created)
 	}
 	if created.Public {
@@ -391,5 +392,54 @@ func TestErrorsAreStructured(t *testing.T) {
 	}
 	if body.Error.Code == "" || body.Error.Message == "" {
 		t.Fatalf("error = %+v, want a code and a message", body.Error)
+	}
+}
+
+func TestListDomains(t *testing.T) {
+	h := newHarness(t)
+	c := h.anonymous()
+
+	// A burned domain still receives mail for what it already hosts, but must
+	// not be advertised as a place new addresses land.
+	burned := h.addDomain("burned.test", core.PoolRandom)
+	if err := pg.SetDomainState(t.Context(), h.db, burned.ID, core.DomainBurned); err != nil {
+		t.Fatalf("SetDomainState: %v", err)
+	}
+
+	var domains []apigen.Domain
+	c.decode(c.do(http.MethodGet, "/v1/domains", nil), http.StatusOK, &domains)
+
+	byName := map[string]apigen.Domain{}
+	for _, domain := range domains {
+		byName[domain.Name] = domain
+	}
+	if len(domains) != 2 {
+		t.Fatalf("got %d domains, want 2: %+v", len(domains), domains)
+	}
+	if byName["rand.test"].Pool != apigen.DomainPoolRandom {
+		t.Errorf("rand.test pool = %q", byName["rand.test"].Pool)
+	}
+	if byName["pub.test"].Pool != apigen.DomainPoolPublic {
+		t.Errorf("pub.test pool = %q", byName["pub.test"].Pool)
+	}
+	if _, listed := byName["burned.test"]; listed {
+		t.Error("a burned domain was advertised as allocatable")
+	}
+}
+
+func TestPublicResponsesMayBeCachedAndPrivateOnesMayNot(t *testing.T) {
+	h := newHarness(t)
+	c := h.client()
+
+	public := c.do(http.MethodGet, "/v1/domains", nil)
+	public.Body.Close()
+	if got := public.Header.Get("Cache-Control"); !strings.Contains(got, "max-age") {
+		t.Errorf("domains cache-control = %q, want it cacheable", got)
+	}
+
+	private := c.do(http.MethodPost, "/v1/identities", nil)
+	private.Body.Close()
+	if got := private.Header.Get("Cache-Control"); got != "no-store" {
+		t.Errorf("identity cache-control = %q, want no-store", got)
 	}
 }

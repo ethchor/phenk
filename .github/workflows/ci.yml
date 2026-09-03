@@ -74,6 +74,12 @@ jobs:
       - name: Build the inbox app
         run: npm run build --workspace web
 
+      # The marketing site never ships to self-hosters and is deployed on its
+      # own, but it reads api/openapi.yaml to build its API reference, so a
+      # change to the specification has to keep it building.
+      - name: Build the marketing site
+        run: npm run build --workspace site
+
       - name: Check formatting
         run: |
           unformatted="$(gofmt -l . | grep -v '^internal/web/dist/' || true)"
