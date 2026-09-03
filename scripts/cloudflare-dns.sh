@@ -121,6 +121,44 @@ if [ -z "$zone_id" ]; then
 fi
 
 echo "zone $domain ($zone_id)"
+
+# Email Routing is the other way this zone can silently swallow mail, and it
+# beats us to it. Cloudflare's DNS troubleshooting page: "If Email Routing is
+# turned on, Cloudflare manages your MX records and may create additional DNS
+# records automatically." It puts its own MX on the root domain and its own
+# `v=spf1 include:_spf.mx.cloudflare.net ~all` alongside — both of which
+# contradict what this script writes.
+#
+# It also locks those records, so writing the MX here would fail anyway. Better
+# to say why up front than to hand back an API error about a locked record.
+routing="$(cf GET "/zones/$zone_id/email/routing" || true)"
+routing_enabled="$(printf '%s' "$routing" | jq -r 'if .success == true then (.result.enabled | tostring) else "unknown" end' 2>/dev/null || echo unknown)"
+
+case "$routing_enabled" in
+true)
+	cat >&2 <<-EOF
+		Email Routing is turned on for $domain, and it has to be off.
+
+		Cloudflare manages the MX and SPF records on the root domain while it is
+		on, and locks them, so the records this script writes would either be
+		rejected or overruled. Its SPF (include:_spf.mx.cloudflare.net) also
+		directly contradicts the "v=spf1 -all" a receive-only domain wants.
+
+		Turn it off under Email Service > Email Routing > Settings > Disable
+		Email Routing, then run this again.
+	EOF
+	exit 1
+	;;
+unknown)
+	# A DNS-scoped token cannot read this endpoint, which is the normal case
+	# and not worth failing over. Say it plainly rather than implying a check
+	# happened that did not.
+	echo "  note: could not check whether Email Routing is on (the token has no access" >&2
+	echo "        to that endpoint). If it is on, turn it off — it manages and locks" >&2
+	echo "        the MX and SPF records on the root domain." >&2
+	;;
+esac
+
 [ "$apply" -eq 1 ] || echo "dry run — nothing will be changed. Re-run with --apply."
 echo
 
