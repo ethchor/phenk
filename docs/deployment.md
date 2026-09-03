@@ -9,6 +9,11 @@ negotiable:
 - **The marketing site** — `site/` — is a Next.js app that goes on Vercel or
   Cloudflare Pages and never touches any of the above.
 
+This document covers choosing the host and getting the DNS right, which is the
+part that decides whether mail arrives at all. Once that is settled,
+[`../deploy/README.md`](../deploy/README.md) has the compose stack that runs on
+it.
+
 ## What Cloudflare can and cannot do here
 
 Cloudflare is the right place for DNS. It is not a place to run the mail server,
