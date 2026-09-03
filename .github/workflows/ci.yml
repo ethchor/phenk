@@ -115,3 +115,6 @@ jobs:
 
       - name: Test
         run: go test -race -count=1 ./...
+
+      - name: Test the DNS script
+        run: ./scripts/test-cloudflare-dns.sh

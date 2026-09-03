@@ -121,8 +121,11 @@ and its own `v=spf1 include:_spf.mx.cloudflare.net ~all` alongside — which is
 the opposite of the `v=spf1 -all` above — and then *locks* those records, so
 they cannot be edited or deleted from the DNS page until unlocked. Turn it off
 under **Email Service > Email Routing > Settings > Disable Email Routing**.
-`scripts/cloudflare-dns.sh` checks this and refuses to run if it is on, when the
-token can see it.
+`scripts/cloudflare-dns.sh` tries to check this, but do not rely on it: a
+`Zone > DNS > Edit` token — the one this page tells you to create — cannot read
+the Email Routing endpoint, so in the setup documented here the script only
+prints a warning and carries on. Check the dashboard yourself. The script's
+silence is not evidence.
 
 **If `app` is proxied, the SSL/TLS mode must be Full (strict).** Caddy serves
 real HTTPS at the origin and redirects HTTP to HTTPS, and Cloudflare is explicit
