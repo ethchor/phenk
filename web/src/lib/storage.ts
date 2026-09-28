@@ -1,28 +1,29 @@
-import type { Identity } from "@phenk/ui/api";
-
 /*
  * What the browser remembers.
  *
- * Only identifiers are kept, never message contents: the whole point of the
- * service is that mail lives on the server for a bounded time and then stops
- * existing, and a copy in localStorage would quietly outlive that.
+ * Only which inboxes were opened, and which messages were read — never message
+ * contents. Mail lives on the server for a bounded time and then stops
+ * existing; a copy in localStorage would quietly outlive that.
+ *
+ * There is no stored appearance: the app follows the system's (Dark Mode:
+ * "avoid offering an app-specific appearance setting").
  */
 
-const CURRENT = "phenk-current-inbox";
-const RECENT = "phenk-recent-inboxes";
-const THEME = "phenk-theme";
-const MAX_RECENT = 8;
+const RECENT = "phenk-recent";
+const LAST = "phenk-last-route";
+const READ_PREFIX = "phenk-read:";
+const MAX_RECENT = 12;
 
-export interface RememberedInbox {
-  id: string;
+export interface RecentInbox {
+  kind: "public" | "private";
   address: string;
-  localPart: string;
-  public: boolean;
+  /** The name for a public inbox, the identity id for a private one. */
+  key: string;
 }
 
-function read<T>(key: string, fallback: T): T {
+function read<T>(storage: Storage | undefined, key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = storage?.getItem(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     // Private browsing, disabled storage, or corrupted data. None of them is
@@ -31,60 +32,58 @@ function read<T>(key: string, fallback: T): T {
   }
 }
 
-function write(key: string, value: unknown): void {
+function write(storage: Storage | undefined, key: string, value: unknown): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    storage?.setItem(key, JSON.stringify(value));
   } catch {
     // Nothing here is load bearing.
   }
 }
 
-export function rememberInbox(identity: Identity): void {
-  const entry: RememberedInbox = {
-    id: identity.id,
-    address: identity.address,
-    localPart: identity.local_part,
-    public: identity.public,
-  };
-  write(CURRENT, entry);
+const local = () => (typeof localStorage === "undefined" ? undefined : localStorage);
+const session = () => (typeof sessionStorage === "undefined" ? undefined : sessionStorage);
 
-  const recent = read<RememberedInbox[]>(RECENT, []).filter((i) => i.address !== entry.address);
-  write(RECENT, [entry, ...recent].slice(0, MAX_RECENT));
+export function recentInboxes(): RecentInbox[] {
+  return read<RecentInbox[]>(local(), RECENT, []);
 }
 
-export function currentInbox(): RememberedInbox | null {
-  return read<RememberedInbox | null>(CURRENT, null);
-}
-
-export function recentInboxes(): RememberedInbox[] {
-  return read<RememberedInbox[]>(RECENT, []);
+export function rememberInbox(entry: RecentInbox): void {
+  const rest = recentInboxes().filter((i) => i.address !== entry.address);
+  write(local(), RECENT, [entry, ...rest].slice(0, MAX_RECENT));
 }
 
 export function forgetInbox(address: string): void {
-  const current = currentInbox();
-  if (current?.address === address) {
-    try {
-      localStorage.removeItem(CURRENT);
-    } catch {
-      // ignored
-    }
-  }
-  write(RECENT, read<RememberedInbox[]>(RECENT, []).filter((i) => i.address !== address));
+  write(
+    local(),
+    RECENT,
+    recentInboxes().filter((i) => i.address !== address),
+  );
 }
 
-export function storedTheme(): "light" | "dark" | null {
-  try {
-    const value = localStorage.getItem(THEME);
-    return value === "light" || value === "dark" ? value : null;
-  } catch {
-    return null;
-  }
+/** The last inbox path, so a relaunch lands where the person left off (Launching). */
+export function lastRoute(): string | null {
+  return read<string | null>(local(), LAST, null);
 }
 
-export function storeTheme(theme: "light" | "dark"): void {
+export function rememberRoute(path: string): void {
+  write(local(), LAST, path);
+}
+
+export function clearLastRoute(): void {
   try {
-    localStorage.setItem(THEME, theme);
+    local()?.removeItem(LAST);
   } catch {
     // ignored
   }
+}
+
+/** Read state lasts for the browser session: long enough to be useful, short enough not to linger. */
+export function readMessages(inbox: string): Set<string> {
+  return new Set(read<string[]>(session(), READ_PREFIX + inbox, []));
+}
+
+export function markMessageRead(inbox: string, messageId: string): void {
+  const ids = readMessages(inbox);
+  ids.add(messageId);
+  write(session(), READ_PREFIX + inbox, [...ids].slice(-500));
 }

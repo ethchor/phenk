@@ -2,15 +2,22 @@ import * as React from "react";
 
 import { cn } from "../lib/cn";
 
-const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
-  ({ className, type, ...props }, ref) => (
+/*
+ * A text field (Text fields page): a filled field with no border, the system's
+ * tertiary fill as its background, and a hint — the placeholder — that says
+ * what it is for. Focus shows the accent ring from the theme.
+ */
+const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
+  ({ className, type = "text", ...props }, ref) => (
     <input
-      type={type}
       ref={ref}
+      type={type}
       className={cn(
-        // 16px on mobile, because anything smaller makes iOS zoom the page on
-        // focus and the user loses their place.
-        "flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 sm:h-9 sm:text-sm",
+        "control-h w-full min-w-0 rounded-[0.625rem] bg-fill-tertiary px-3 type-body text-label",
+        "placeholder:text-label-tertiary",
+        "transition-[background-color,box-shadow] duration-150",
+        "focus-visible:bg-content focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[color-mix(in_srgb,var(--system-blue)_45%,transparent)]",
+        "disabled:opacity-50",
         className,
       )}
       {...props}

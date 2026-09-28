@@ -3,6 +3,15 @@ import * as TabsPrimitive from "@radix-ui/react-tabs";
 
 import { cn } from "../lib/cn";
 
+/*
+ * A segmented control (Segmented controls page): closely related choices that
+ * change a view, shown as one control with the selection visible. It is built
+ * on Radix Tabs because that is what it is semantically — it switches between
+ * views of the same content — and Tabs brings the arrow-key behaviour and the
+ * ARIA roles for free.
+ *
+ * Labels should be nouns, all text or all symbols, and few.
+ */
 const Tabs = TabsPrimitive.Root;
 
 const TabsList = React.forwardRef<
@@ -11,10 +20,7 @@ const TabsList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <TabsPrimitive.List
     ref={ref}
-    className={cn(
-      "inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground",
-      className,
-    )}
+    className={cn("inline-flex items-stretch rounded-full bg-fill-tertiary p-0.5 text-label", className)}
     {...props}
   />
 ));
@@ -27,7 +33,11 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",
+      "control-h-sm inline-flex min-w-[5.5rem] flex-1 items-center justify-center rounded-full px-3 type-subhead font-medium",
+      "text-label-secondary transition-[background-color,color,box-shadow] duration-150",
+      "hover:text-label",
+      "data-[state=active]:bg-elevated data-[state=active]:text-label data-[state=active]:shadow-[0_1px_3px_rgb(0_0_0/0.12),0_0_0_0.5px_rgb(0_0_0/0.04)]",
+      "disabled:pointer-events-none disabled:opacity-40",
       className,
     )}
     {...props}
@@ -39,11 +49,7 @@ const TabsContent = React.forwardRef<
   React.ComponentRef<typeof TabsPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>
 >(({ className, ...props }, ref) => (
-  <TabsPrimitive.Content
-    ref={ref}
-    className={cn("mt-2 focus-visible:outline-none", className)}
-    {...props}
-  />
+  <TabsPrimitive.Content ref={ref} className={cn("focus-visible:outline-none", className)} {...props} />
 ));
 TabsContent.displayName = TabsPrimitive.Content.displayName;
 
