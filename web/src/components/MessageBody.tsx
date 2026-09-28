@@ -12,6 +12,10 @@ import { useMemo } from "react";
  * `dangerouslySetInnerHTML` is never used for message content anywhere in this
  * codebase, sanitized or not. Sanitizing is a filter and filters have bugs;
  * the sandbox is what makes a bug survivable.
+ *
+ * Mail is designed for a white page, so it keeps one — slightly dimmed in dark
+ * mode, per the Dark Mode page's "soften the color of white backgrounds", so
+ * it does not glow against everything around it.
  */
 export function MessageBody({ html, title }: { html: string; title: string }) {
   const document = useMemo(() => wrap(html), [html]);
@@ -24,7 +28,7 @@ export function MessageBody({ html, title }: { html: string; title: string }) {
       sandbox="allow-popups allow-popups-to-escape-sandbox"
       referrerPolicy="no-referrer"
       title={title}
-      className="h-[60vh] w-full rounded-md border bg-white lg:h-[calc(100vh-22rem)]"
+      className="mail-paper block h-[max(26rem,calc(100dvh-18rem))] w-full rounded-[0.875rem] bg-white shadow-[0_0_0_0.5px_var(--separator)]"
     />
   );
 }
@@ -44,12 +48,13 @@ function wrap(html: string): string {
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'; frame-src 'none'; script-src 'none'">
+<base target="_blank">
 <style>
   html { color-scheme: light; }
-  body { margin: 0; padding: 16px; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: #18181b; background: #fff; overflow-wrap: anywhere; }
+  body { margin: 0; padding: 20px; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d1d1f; background: #fff; overflow-wrap: anywhere; }
   img { max-width: 100%; height: auto; }
   table { max-width: 100%; }
-  a { color: #0f766e; }
+  a { color: #0066cc; }
 </style>
 </head>
 <body>${html}</body>

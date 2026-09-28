@@ -4,76 +4,281 @@
  * looking like two different products.
  *
  * Every colour is a token. A hex value anywhere else in the codebase is a bug:
- * it will be right in one theme and wrong in the other.
+ * it will be right in one appearance and wrong in the other.
+ *
+ * The values follow Apple's Human Interface Guidelines (see docs/design.md):
+ * the system palette from the Color page, including its increased-contrast
+ * variants; the label and fill hierarchies; the text styles from the
+ * Typography page; and Liquid Glass for the functional layer only. Where a
+ * system colour falls below the 4.5:1 contrast the Accessibility page asks of
+ * small text, a darker text variant is used for text and the system colour is
+ * kept for fills.
  */
 
 @import "tailwindcss";
 
+/* Appearance follows the system. The HIG is explicit — "avoid offering an
+   app-specific appearance setting" — so dark mode is a media query, not a
+   toggle. The class form stays so an embedding page can force either. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --radius: 0.625rem;
+  color-scheme: light dark;
 
-  /* Light. A warm near-white rather than pure white: a message list is read
-     for minutes at a time and pure white glares. */
-  --background: oklch(0.99 0.004 95);
-  --foreground: oklch(0.21 0.012 265);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.012 265);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.012 265);
+  /* ── System colours (Color page, default light) ─────────────────────── */
+  --system-blue: rgb(0 136 255);
+  --system-red: rgb(255 56 60);
+  --system-orange: rgb(255 141 40);
+  --system-yellow: rgb(255 204 0);
+  --system-green: rgb(52 199 89);
+  --system-mint: rgb(0 200 179);
+  --system-teal: rgb(0 195 208);
+  --system-indigo: rgb(97 85 245);
+  --system-purple: rgb(203 48 224);
+  --system-pink: rgb(255 45 85);
+  --system-gray: rgb(142 142 147);
 
-  /* Teal, chosen so the product does not look like every other shadcn app. */
-  --primary: oklch(0.58 0.13 184);
-  --primary-foreground: oklch(0.99 0.01 180);
+  /* ── Labels: four levels, primary to quaternary ─────────────────────── */
+  --label: rgb(29 29 31);
+  /* The system secondary label (60 60 67 / 60%) measures 3.4:1 on white.
+     This is the darkest grey Apple uses for secondary text on the web, and
+     it clears 4.5:1 on every surface here. */
+  --label-secondary: rgb(110 110 115);
+  --label-tertiary: rgb(60 60 67 / 0.45);
+  --label-quaternary: rgb(60 60 67 / 0.22);
 
-  --secondary: oklch(0.96 0.006 250);
-  --secondary-foreground: oklch(0.25 0.015 265);
-  --muted: oklch(0.96 0.006 250);
-  --muted-foreground: oklch(0.53 0.017 265);
-  --accent: oklch(0.95 0.02 184);
-  --accent-foreground: oklch(0.28 0.05 184);
+  /* ── Fills: for controls, not for content ───────────────────────────── */
+  --fill: rgb(120 120 128 / 0.2);
+  --fill-secondary: rgb(120 120 128 / 0.16);
+  --fill-tertiary: rgb(118 118 128 / 0.12);
+  --fill-quaternary: rgb(116 116 128 / 0.08);
 
-  --destructive: oklch(0.58 0.21 27);
-  --destructive-foreground: oklch(0.99 0.01 27);
-  --warning: oklch(0.72 0.16 70);
-  --warning-foreground: oklch(0.25 0.06 70);
-  --success: oklch(0.63 0.15 150);
-  --success-foreground: oklch(0.99 0.01 150);
+  /* ── Backgrounds ────────────────────────────────────────────────────── */
+  --bg-canvas: rgb(242 242 247);
+  --bg-content: rgb(255 255 255);
+  --bg-elevated: rgb(255 255 255);
+  --separator: rgb(60 60 67 / 0.18);
+  --separator-opaque: rgb(198 198 200);
 
-  --border: oklch(0.91 0.008 265);
-  --input: oklch(0.91 0.008 265);
-  --ring: oklch(0.58 0.13 184);
+  /* ── Accent and status ──────────────────────────────────────────────── */
+  --accent-fill: var(--system-blue);
+  /* System blue as small text is 3.6:1 on white; Apple's web link blue is
+     5.6:1. */
+  --accent-text: rgb(0 102 204);
+  --accent-tint: rgb(0 136 255 / 0.12);
+  --destructive-fill: var(--system-red);
+  --destructive-text: rgb(215 0 21);
+  --warning-tint: rgb(255 141 40 / 0.14);
+  --warning-text: rgb(166 76 0);
+  --success-text: rgb(0 125 45);
+
+  /* ── Liquid Glass, regular variant (Materials page) ─────────────────── */
+  --glass-bg: rgb(255 255 255 / 0.66);
+  --glass-fallback: rgb(250 250 252);
+  --glass-border: rgb(255 255 255 / 0.7);
+  --glass-edge: rgb(0 0 0 / 0.08);
+  --glass-highlight: rgb(255 255 255 / 0.75);
+  --glass-shadow: 0 8px 32px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.06);
+  --glass-blur: 24px;
+
+  /* ── Shape: concentric radii ────────────────────────────────────────── */
+  --radius: 0.75rem;
+  --radius-pane: 1.25rem;
+  --radius-row: 0.75rem;
+  --radius-menu: 0.875rem;
+  --radius-menu-item: 0.5rem;
+
+  /* ── Type: iOS text styles (Typography page, Large) ─────────────────── */
+  --type-large-title: 2.125rem;
+  --lh-large-title: 2.5625rem;
+  --type-title1: 1.75rem;
+  --lh-title1: 2.125rem;
+  --type-title2: 1.375rem;
+  --lh-title2: 1.75rem;
+  --type-title3: 1.25rem;
+  --lh-title3: 1.5625rem;
+  --type-headline: 1.0625rem;
+  --lh-headline: 1.375rem;
+  --type-body: 1.0625rem;
+  --lh-body: 1.375rem;
+  --type-callout: 1rem;
+  --lh-callout: 1.3125rem;
+  --type-subhead: 0.9375rem;
+  --lh-subhead: 1.25rem;
+  --type-footnote: 0.8125rem;
+  --lh-footnote: 1.125rem;
+  --type-caption1: 0.75rem;
+  --lh-caption1: 1rem;
+  --type-caption2: 0.6875rem;
+  --lh-caption2: 0.8125rem;
+
+  /* Controls: the iOS default size (Accessibility page). */
+  --control-height: 2.75rem;
+  --control-height-small: 2.25rem;
+
+  /* ── Legacy names, kept for the marketing site ──────────────────────── */
+  --background: var(--bg-canvas);
+  --foreground: var(--label);
+  --card: var(--bg-content);
+  --card-foreground: var(--label);
+  --popover: var(--bg-elevated);
+  --popover-foreground: var(--label);
+  --primary: var(--accent-fill);
+  --primary-foreground: rgb(255 255 255);
+  --secondary: var(--fill-tertiary);
+  --secondary-foreground: var(--label);
+  --muted: var(--fill-tertiary);
+  --muted-foreground: var(--label-secondary);
+  --accent: var(--accent-tint);
+  --accent-foreground: var(--accent-text);
+  --destructive: var(--destructive-fill);
+  --destructive-foreground: rgb(255 255 255);
+  --warning: var(--system-orange);
+  --warning-foreground: rgb(29 29 31);
+  --success: var(--system-green);
+  --success-foreground: rgb(0 60 20);
+  --border: var(--separator);
+  --input: var(--separator);
+  --ring: var(--system-blue);
 }
 
+/* With a fine pointer, the macOS text styles apply, each nudged up a point
+   for a browser window: Mail's 13pt body reads small in a web page. Controls
+   drop to the macOS default of 28pt. */
+@media (pointer: fine) {
+  :root {
+    --type-large-title: 1.75rem;
+    --lh-large-title: 2.125rem;
+    --type-title1: 1.4375rem;
+    --lh-title1: 1.75rem;
+    --type-title2: 1.125rem;
+    --lh-title2: 1.4375rem;
+    --type-title3: 1rem;
+    --lh-title3: 1.3125rem;
+    --type-headline: 0.875rem;
+    --lh-headline: 1.1875rem;
+    --type-body: 0.875rem;
+    --lh-body: 1.25rem;
+    --type-callout: 0.8125rem;
+    --lh-callout: 1.125rem;
+    --type-subhead: 0.75rem;
+    --lh-subhead: 1rem;
+    --type-footnote: 0.75rem;
+    --lh-footnote: 1rem;
+    --type-caption1: 0.6875rem;
+    --lh-caption1: 0.875rem;
+    --type-caption2: 0.6875rem;
+    --lh-caption2: 0.875rem;
+    --control-height: 1.75rem;
+    --control-height-small: 1.5rem;
+  }
+}
+
+/* Dark appearance: default dark values from the Color page. */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --system-blue: rgb(0 145 255);
+    --system-red: rgb(255 66 69);
+    --system-orange: rgb(255 146 48);
+    --system-yellow: rgb(255 214 0);
+    --system-green: rgb(48 209 88);
+    --system-mint: rgb(0 218 195);
+    --system-teal: rgb(0 210 224);
+    --system-indigo: rgb(109 124 255);
+    --system-purple: rgb(219 52 242);
+    --system-pink: rgb(255 55 95);
+
+    --label: rgb(245 245 247);
+    --label-secondary: rgb(152 152 157);
+    --label-tertiary: rgb(235 235 245 / 0.35);
+    --label-quaternary: rgb(235 235 245 / 0.18);
+
+    --fill: rgb(120 120 128 / 0.36);
+    --fill-secondary: rgb(120 120 128 / 0.32);
+    --fill-tertiary: rgb(118 118 128 / 0.24);
+    --fill-quaternary: rgb(118 118 128 / 0.18);
+
+    --bg-canvas: rgb(0 0 0);
+    --bg-content: rgb(28 28 30);
+    --bg-elevated: rgb(44 44 46);
+    --separator: rgb(84 84 88 / 0.65);
+    --separator-opaque: rgb(56 56 58);
+
+    --accent-text: rgb(0 145 255);
+    --accent-tint: rgb(0 145 255 / 0.2);
+    --destructive-text: rgb(255 66 69);
+    --warning-tint: rgb(255 146 48 / 0.18);
+    --warning-text: rgb(255 170 90);
+    --success-text: rgb(48 209 88);
+
+    --glass-bg: rgb(44 44 48 / 0.58);
+    --glass-fallback: rgb(36 36 38);
+    --glass-border: rgb(255 255 255 / 0.1);
+    --glass-edge: rgb(0 0 0 / 0.5);
+    --glass-highlight: rgb(255 255 255 / 0.08);
+    --glass-shadow: 0 8px 32px rgb(0 0 0 / 0.4), 0 1px 2px rgb(0 0 0 / 0.3);
+
+    --warning-foreground: rgb(29 29 31);
+    --success-foreground: rgb(0 40 14);
+  }
+}
+
+/* The same dark values, forced by class. Kept in step with the block above. */
 .dark {
-  --background: oklch(0.17 0.012 265);
-  --foreground: oklch(0.95 0.006 250);
-  --card: oklch(0.21 0.014 265);
-  --card-foreground: oklch(0.95 0.006 250);
-  --popover: oklch(0.21 0.014 265);
-  --popover-foreground: oklch(0.95 0.006 250);
+  --system-blue: rgb(0 145 255);
+  --system-red: rgb(255 66 69);
+  --system-orange: rgb(255 146 48);
+  --system-green: rgb(48 209 88);
+  --label: rgb(245 245 247);
+  --label-secondary: rgb(152 152 157);
+  --label-tertiary: rgb(235 235 245 / 0.35);
+  --label-quaternary: rgb(235 235 245 / 0.18);
+  --fill: rgb(120 120 128 / 0.36);
+  --fill-secondary: rgb(120 120 128 / 0.32);
+  --fill-tertiary: rgb(118 118 128 / 0.24);
+  --fill-quaternary: rgb(118 118 128 / 0.18);
+  --bg-canvas: rgb(0 0 0);
+  --bg-content: rgb(28 28 30);
+  --bg-elevated: rgb(44 44 46);
+  --separator: rgb(84 84 88 / 0.65);
+  --separator-opaque: rgb(56 56 58);
+  --accent-text: rgb(0 145 255);
+  --accent-tint: rgb(0 145 255 / 0.2);
+  --destructive-text: rgb(255 66 69);
+  --warning-tint: rgb(255 146 48 / 0.18);
+  --warning-text: rgb(255 170 90);
+  --success-text: rgb(48 209 88);
+  --glass-bg: rgb(44 44 48 / 0.58);
+  --glass-fallback: rgb(36 36 38);
+  --glass-border: rgb(255 255 255 / 0.1);
+  --glass-edge: rgb(0 0 0 / 0.5);
+  --glass-highlight: rgb(255 255 255 / 0.08);
+  --glass-shadow: 0 8px 32px rgb(0 0 0 / 0.4), 0 1px 2px rgb(0 0 0 / 0.3);
+}
 
-  --primary: oklch(0.72 0.12 184);
-  --primary-foreground: oklch(0.18 0.03 184);
-
-  --secondary: oklch(0.27 0.016 265);
-  --secondary-foreground: oklch(0.95 0.006 250);
-  --muted: oklch(0.27 0.016 265);
-  --muted-foreground: oklch(0.70 0.015 265);
-  --accent: oklch(0.30 0.04 184);
-  --accent-foreground: oklch(0.92 0.04 184);
-
-  --destructive: oklch(0.65 0.19 27);
-  --destructive-foreground: oklch(0.98 0.01 27);
-  --warning: oklch(0.76 0.15 70);
-  --warning-foreground: oklch(0.20 0.05 70);
-  --success: oklch(0.70 0.14 150);
-  --success-foreground: oklch(0.18 0.04 150);
-
-  --border: oklch(0.30 0.014 265);
-  --input: oklch(0.32 0.014 265);
-  --ring: oklch(0.72 0.12 184);
+/* Increased contrast: the Color page's increased-contrast variants, full
+   strength labels and separators, and glass thick enough to read through. */
+@media (prefers-contrast: more) {
+  :root {
+    --system-blue: rgb(30 110 244);
+    --system-red: rgb(233 21 45);
+    --accent-text: rgb(0 80 180);
+    --label-secondary: rgb(72 72 76);
+    --label-tertiary: rgb(60 60 67 / 0.7);
+    --separator: rgb(60 60 67 / 0.45);
+    --glass-bg: rgb(255 255 255 / 0.92);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not(.light) {
+      --system-blue: rgb(92 184 255);
+      --system-red: rgb(255 97 101);
+      --accent-text: rgb(92 184 255);
+      --label-secondary: rgb(200 200 206);
+      --label-tertiary: rgb(235 235 245 / 0.6);
+      --separator: rgb(140 140 146 / 0.8);
+      --glass-bg: rgb(36 36 38 / 0.94);
+    }
+  }
 }
 
 @theme inline {
@@ -101,12 +306,121 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
+  /* HIG-named colours, for the inbox app. */
+  --color-label: var(--label);
+  --color-label-secondary: var(--label-secondary);
+  --color-label-tertiary: var(--label-tertiary);
+  --color-label-quaternary: var(--label-quaternary);
+  --color-fill: var(--fill);
+  --color-fill-secondary: var(--fill-secondary);
+  --color-fill-tertiary: var(--fill-tertiary);
+  --color-fill-quaternary: var(--fill-quaternary);
+  --color-canvas: var(--bg-canvas);
+  --color-content: var(--bg-content);
+  --color-elevated: var(--bg-elevated);
+  --color-separator: var(--separator);
+  --color-tint: var(--system-blue);
+  --color-tint-text: var(--accent-text);
+  --color-tint-soft: var(--accent-tint);
+  --color-danger: var(--destructive-fill);
+  --color-danger-text: var(--destructive-text);
+  --color-caution-soft: var(--warning-tint);
+  --color-caution-text: var(--warning-text);
+  --color-ok-text: var(--success-text);
+  --color-system-green: var(--system-green);
+  --color-system-orange: var(--system-orange);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-pane: var(--radius-pane);
+  --radius-row: var(--radius-row);
+  --radius-menu: var(--radius-menu);
 
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono", "Roboto Mono", Menlo, Consolas,
+    monospace;
+}
+
+/* Text styles, named as the HIG names them. */
+@utility type-large-title {
+  font-size: var(--type-large-title);
+  line-height: var(--lh-large-title);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+@utility type-title1 {
+  font-size: var(--type-title1);
+  line-height: var(--lh-title1);
+  font-weight: 700;
+}
+@utility type-title2 {
+  font-size: var(--type-title2);
+  line-height: var(--lh-title2);
+  font-weight: 700;
+}
+@utility type-title3 {
+  font-size: var(--type-title3);
+  line-height: var(--lh-title3);
+  font-weight: 600;
+}
+@utility type-headline {
+  font-size: var(--type-headline);
+  line-height: var(--lh-headline);
+  font-weight: 600;
+}
+@utility type-body {
+  font-size: var(--type-body);
+  line-height: var(--lh-body);
+}
+@utility type-callout {
+  font-size: var(--type-callout);
+  line-height: var(--lh-callout);
+}
+@utility type-subhead {
+  font-size: var(--type-subhead);
+  line-height: var(--lh-subhead);
+}
+@utility type-footnote {
+  font-size: var(--type-footnote);
+  line-height: var(--lh-footnote);
+}
+@utility type-caption {
+  font-size: var(--type-caption1);
+  line-height: var(--lh-caption1);
+}
+@utility type-caption2 {
+  font-size: var(--type-caption2);
+  line-height: var(--lh-caption2);
+}
+
+/* Liquid Glass, regular variant: blur plus a luminosity shift, for the
+   functional layer — toolbars and sidebars — floating above content. Never
+   for content itself (Materials: "Don't use Liquid Glass in the content
+   layer"). */
+@utility glass {
+  background-color: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 0.5px solid var(--glass-border);
+  box-shadow:
+    var(--glass-shadow),
+    0 0 0 0.5px var(--glass-edge),
+    inset 0 1px 0 var(--glass-highlight);
+}
+
+/* Controls meet the size the Accessibility page asks for. */
+@utility control-h {
+  min-height: var(--control-height);
+}
+@utility control-h-sm {
+  min-height: var(--control-height-small);
+}
+@utility hit-target {
+  min-height: var(--control-height);
+  min-width: var(--control-height);
 }
 
 @layer base {
@@ -114,10 +428,26 @@
     border-color: var(--color-border);
   }
 
+  html {
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-size: var(--type-body);
+    line-height: var(--lh-body);
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Focus: a ring in the accent colour for anything focusable by keyboard
+     (Focus and selection). Never removed, only restyled. */
+  :focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--system-blue) 55%, transparent);
+    outline-offset: 2px;
   }
 
   /* An address is copied by hand more often than it is read, so it is set in
@@ -126,5 +456,52 @@
     font-family: var(--font-mono);
     font-variant-ligatures: none;
     letter-spacing: 0.01em;
+  }
+}
+
+/* Glass that cannot be seen through is worse than no glass at all. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass-bg: var(--glass-fallback);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-bg: var(--glass-fallback);
+    --glass-blur: 0px;
+  }
+}
+
+/* Motion is optional (Motion page). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Entrances for alerts, sheets and menus: brief, and scale rather than slide,
+   so they read as appearing in place. Tailwind's translate utilities use the
+   separate `translate` property, so these transforms do not fight them. */
+@keyframes phenk-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes phenk-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }

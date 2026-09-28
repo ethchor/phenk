@@ -19,6 +19,9 @@ export type AuthResults = components["schemas"]["AuthResults"];
 export type ApiError = components["schemas"]["Error"];
 export type Meta = components["schemas"]["Meta"];
 export type Domain = components["schemas"]["Domain"];
+export type Extracted = components["schemas"]["Extracted"];
+export type DetectedCode = components["schemas"]["DetectedCode"];
+export type DetectedLink = components["schemas"]["DetectedLink"];
 
 /** Thrown for any non-2xx response, carrying the server's structured error. */
 export class PhenkError extends Error {

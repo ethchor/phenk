@@ -6,5 +6,22 @@
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
+}
+
+body {
+  background-color: var(--bg-canvas);
+  overscroll-behavior-y: none;
+}
+
+/* Mail is designed for a white page, so it keeps one — slightly dimmed in dark
+   mode so it does not glow against everything around it (Dark Mode: "soften
+   the color of white backgrounds"). */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) .mail-paper {
+    filter: brightness(0.9);
+  }
+}
+.dark .mail-paper {
+  filter: brightness(0.9);
 }

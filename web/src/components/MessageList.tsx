@@ -1,117 +1,178 @@
-import { Mail, Paperclip } from "lucide-react";
-import { Badge, Card, Skeleton, cn } from "@phenk/ui";
+import { useEffect, useRef } from "react";
+import { Copy, Inbox, Paperclip, SearchX } from "lucide-react";
+import { Button, Skeleton, cn } from "@phenk/ui";
 
 import type { Identity, MessageSummary } from "../lib/api";
-import { relativeTime } from "../lib/format";
+import { copyText } from "../lib/clipboard";
+import { listTime } from "../lib/format";
+import { EmptyState } from "./EmptyState";
 
 interface MessageListProps {
   identity: Identity;
   messages: MessageSummary[];
   selectedId: string | null;
-  loading: boolean;
-  onSelect: (message: MessageSummary) => void;
   readIds: Set<string>;
+  loading: boolean;
+  filtered: boolean;
+  onSelect: (message: MessageSummary) => void;
 }
 
+/**
+ * The message list (Lists and tables).
+ *
+ * Rows are succinct — sender, subject, a two-line preview, the time — and the
+ * current selection stays highlighted even when focus is elsewhere (Split
+ * views: "persistently highlight the current selection in each pane"). A
+ * highlight, not a ring, marks the selected row; the ring is for keyboard
+ * focus (Focus and selection).
+ */
 export function MessageList({
   identity,
   messages,
   selectedId,
-  loading,
-  onSelect,
   readIds,
+  loading,
+  filtered,
+  onSelect,
 }: MessageListProps) {
+  const selectedRef = useRef<HTMLButtonElement | null>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
+
+  // When the selection moves — by j/k, the arrow keys, or a click — keep it in
+  // view, and let focus follow it if the person was already working in the
+  // list. Otherwise focus would stay on the last row clicked while the
+  // selection moved on, and two rows would each claim to be current. Focus is
+  // never pulled out of anywhere else, such as the filter field (Focus and
+  // selection: "avoid changing focus without people's interaction").
+  useEffect(() => {
+    const row = selectedRef.current;
+    if (!row) return;
+    row.scrollIntoView({ block: "nearest" });
+    const active = document.activeElement;
+    if (active === document.body || (active && listRef.current?.contains(active))) {
+      row.focus({ preventScroll: true });
+    }
+  }, [selectedId]);
+
   if (loading) {
     return (
-      <div className="space-y-2" aria-busy="true" aria-label="Loading messages">
-        {[0, 1, 2].map((i) => (
-          <Card key={i} className="p-3">
-            <Skeleton className="h-4 w-1/3" />
-            <Skeleton className="mt-2 h-4 w-2/3" />
-            <Skeleton className="mt-2 h-3 w-full" />
-          </Card>
+      <div className="flex flex-col gap-1 p-2" aria-label="Loading messages">
+        {Array.from({ length: 5 }, (_, i) => (
+          <div key={i} className="flex flex-col gap-2 rounded-[var(--radius-row)] px-3 py-3">
+            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="h-3.5 w-3/4" />
+            <Skeleton className="h-3.5 w-full" />
+          </div>
         ))}
       </div>
     );
   }
 
   if (messages.length === 0) {
-    return <EmptyInbox identity={identity} />;
+    return filtered ? (
+      <EmptyState icon={<SearchX />} title="No Matches">
+        No message in this inbox matches the filter.
+      </EmptyState>
+    ) : (
+      <EmptyState
+        icon={<Inbox />}
+        title="No Mail Yet"
+        actions={
+          <Button variant="bordered" onClick={() => copyText(identity.address, "Address")}>
+            <Copy aria-hidden /> Copy Address
+          </Button>
+        }
+      >
+        <p>
+          Send anything to <span className="address select-text text-label">{identity.address}</span> and it
+          appears here the moment it arrives.
+        </p>
+        <p className="mt-3 inline-flex items-center gap-2 type-footnote">
+          <span className="relative flex size-2" aria-hidden>
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-system-green opacity-60" />
+            <span className="relative inline-flex size-2 rounded-full bg-system-green" />
+          </span>
+          Waiting for mail
+        </p>
+      </EmptyState>
+    );
   }
 
   return (
-    <ul className="space-y-2">
+    <ul ref={listRef} className="flex flex-col gap-px p-2" aria-label={`Messages in ${identity.address}`}>
       {messages.map((message) => {
+        const selected = message.id === selectedId;
         const unread = !readIds.has(message.id);
+        const code = message.extracted?.codes[0]?.value;
+        const sender = message.from.name || message.from.address || "Unknown sender";
+
         return (
           <li key={message.id}>
             <button
               type="button"
+              ref={selected ? selectedRef : undefined}
               onClick={() => onSelect(message)}
-              aria-current={selectedId === message.id}
+              aria-current={selected ? "true" : undefined}
               className={cn(
-                "w-full rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                selectedId === message.id && "border-primary bg-accent/60",
+                "relative grid w-full grid-cols-[0.75rem_1fr] gap-x-1.5 rounded-[var(--radius-row)] py-2.5 pl-1.5 pr-3 text-left",
+                // A list shows focus as a highlight, not a ring (Focus and
+                // selection); focus follows the selection, so the selected
+                // row's tint is the indicator, and an unselected row reached
+                // by Tab gets a highlight of its own.
+                "transition-colors duration-100 focus-visible:outline-none",
+                selected
+                  ? "bg-tint-soft focus-visible:bg-[color-mix(in_srgb,var(--system-blue)_24%,transparent)]"
+                  : "hover:bg-fill-quaternary active:bg-fill-tertiary focus-visible:bg-fill-tertiary",
               )}
             >
-              <div className="flex items-center gap-2">
-                {unread && (
+              <span className="flex justify-center pt-[0.45em]" aria-hidden>
+                {unread && <span className="size-2 rounded-full bg-tint" />}
+              </span>
+              <span className="min-w-0">
+                <span className="flex items-baseline justify-between gap-3">
                   <span
-                    className="size-2 shrink-0 rounded-full bg-primary"
-                    aria-label="Unread"
-                  />
-                )}
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                  {message.from.name || message.from.address || "Unknown sender"}
+                    className={cn("truncate type-body text-label", unread ? "font-semibold" : "font-medium")}
+                  >
+                    {unread && <span className="sr-only">Unread. </span>}
+                    {sender}
+                  </span>
+                  <time
+                    dateTime={message.received_at}
+                    className="shrink-0 type-footnote text-label-secondary"
+                  >
+                    {listTime(message.received_at)}
+                  </time>
                 </span>
-                {message.attachment_count > 0 && (
-                  <Paperclip className="size-3.5 shrink-0 text-muted-foreground" aria-label="Has attachments" />
-                )}
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {relativeTime(message.received_at)}
+                <span className="block truncate type-subhead text-label">
+                  {message.state === "received" ? "Receiving…" : message.subject || "(No Subject)"}
                 </span>
-              </div>
-
-              <p className="mt-1 truncate text-sm">
-                {message.subject || <span className="text-muted-foreground">(no subject)</span>}
-              </p>
-
-              {message.state === "received" ? (
-                <p className="mt-1 text-xs text-muted-foreground">Still opening this one…</p>
-              ) : message.state === "failed" ? (
-                <Badge variant="outline" className="mt-1">
-                  Could not be read — the original is still downloadable
-                </Badge>
-              ) : (
-                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{message.preview}</p>
-              )}
+                {message.preview && (
+                  <span className="mt-0.5 line-clamp-2 type-subhead text-label-secondary">
+                    {message.preview}
+                  </span>
+                )}
+                {(code || message.attachment_count > 0) && (
+                  <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    {code && (
+                      <span className="address inline-flex items-center rounded-full bg-tint-soft px-2 py-0.5 type-caption font-semibold tracking-wider text-tint-text">
+                        <span className="sr-only">Code </span>
+                        {code}
+                      </span>
+                    )}
+                    {message.attachment_count > 0 && (
+                      <span className="inline-flex items-center gap-1 type-caption text-label-secondary">
+                        <Paperclip className="size-3" aria-hidden />
+                        {message.attachment_count}
+                        <span className="sr-only"> attachments</span>
+                      </span>
+                    )}
+                  </span>
+                )}
+              </span>
             </button>
           </li>
         );
       })}
     </ul>
-  );
-}
-
-/**
- * The empty state repeats the address on purpose. It is the thing the user came
- * for, and this is the screen they are looking at while they paste it somewhere
- * else.
- */
-function EmptyInbox({ identity }: { identity: Identity }) {
-  return (
-    <Card className="flex flex-col items-center gap-3 px-6 py-12 text-center">
-      <span className="relative flex size-10 items-center justify-center">
-        <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary/20" />
-        <Mail className="relative size-6 text-primary" aria-hidden />
-      </span>
-      <div>
-        <p className="text-sm font-medium">This inbox is live and waiting</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Mail sent to <span className="address font-medium">{identity.address}</span> appears here
-          the moment it arrives.
-        </p>
-      </div>
-    </Card>
   );
 }

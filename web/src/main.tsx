@@ -25,9 +25,20 @@ if (!root) throw new Error("no root element");
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider delayDuration={200}>
+      <TooltipProvider delayDuration={300}>
         <App />
-        <Toaster position="bottom-center" richColors closeButton />
+        {/* Brief confirmations, at the bottom where they do not cover the
+            toolbar (Feedback: confirm that a significant action completed). */}
+        <Toaster
+          position="bottom-center"
+          offset={96}
+          toastOptions={{
+            classNames: {
+              toast: "!glass !rounded-full !border-0 !text-[var(--label)] !font-sans !py-3 !px-5",
+              title: "!type-subhead !font-medium",
+            },
+          }}
+        />
       </TooltipProvider>
     </QueryClientProvider>
   </StrictMode>,
