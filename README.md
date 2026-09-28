@@ -1,33 +1,56 @@
 # phenk
 
-A privacy-first temporary email platform, built for humans, developers, and
-autonomous agents.
+Public email inboxes for people and agents. Type any name and read the mail
+sent to it — no account, no password, nothing to confirm.
 
-Take an address, receive real mail on it in real time, and let it destroy itself
-on a deadline. No account, no password, and no forwarding address that outlives
-its purpose.
+Mail to `anything@<your public domain>` lands in the inbox called `anything`,
+and anyone who knows the name can read it. Messages are kept for a rolling
+window, seven days by default, then deleted.
 
 ## What makes it different
 
-**Expiry is real.** Every address has its own encryption key and everything it
-receives is encrypted under it. Expiry destroys that key. The messages are not
-hidden or flagged deleted; they stop being readable, including by the operator.
+**Any name is an inbox.** Nothing to create first: type a name, or use it in a
+form and read it later. The app says plainly, wherever an inbox is shown, that
+anyone who knows the name can read it.
 
-**Nothing is accepted that cannot be delivered.** An unknown, expired or purged
+**Built for agents and test suites.** One request takes an agent from "wait for
+mail" to "use the code": waiting on a name nobody has used opens its inbox, and
+the answer comes back once the message is parsed, with verification codes and
+account links already detected. `/llms.txt` explains the whole flow to a model
+in one page.
+
+```sh
+curl -s "https://app.example/v1/named/agent-7f3c9a21/wait?timeout=60"
+# .messages[0].extracted.codes[0].value  →  "482913"
+```
+
+**Codes are detected conservatively.** A wrong code is worse than none, so a
+candidate only counts when the words around it say it is a code; amounts,
+phone numbers, years, dates and URL fragments are thrown away. Every detected
+code is shown with the line it came from.
+
+**Nothing is accepted that cannot be delivered.** An unknown or refused
 recipient is rejected at `RCPT TO` with a `550`, never accepted and dropped. A
 message is never acknowledged with `250` until it is durably committed.
-
-**Addresses are never reused.** A destroyed address stays in the table as a
-tombstone forever, so mail for it can never reach somebody else.
 
 **Message HTML is treated as hostile.** It is stripped of everything executable
 on the way in, before it is encrypted and stored, and then rendered in an iframe
 with no scripting and no same-origin access. Remote images are fetched by the
 server, so a sender never learns the reader's address or when they opened it.
 
-**Public inboxes are labelled as public.** You can open any inbox by typing its
-name. Every surface that shows one says plainly that anyone who guesses the name
-can read it, and named inboxes can never hold an API key, a webhook, or a grant.
+**Encrypted at rest, per inbox.** Every inbox has its own key and everything it
+receives is encrypted under it.
+
+**Designed to Apple's Human Interface Guidelines.** The inbox app follows the
+current HIG on the web — Liquid Glass only for navigation, system colours and
+type, Dark Mode from the system, keyboard shortcuts, and layouts that adapt by
+width. [docs/design.md](docs/design.md) records the guidance and the decisions.
+
+**Private addresses, if you want them.** With `PHENK_FEATURE_DISPOSABLE=true`,
+Phenk also hands out private, unguessable addresses that belong to one browser
+and are destroyed on a deadline. Expiry destroys the address's key, so its mail
+stops being readable — by the operator too — and a destroyed address is never
+reused. Off by default.
 
 ## Running it
 
@@ -45,9 +68,12 @@ export PHENK_DATABASE_URL="postgres://phenk:phenk@localhost:5432/phenk?sslmode=d
 # Build the inbox app into the binary and compile.
 make build
 
-# Add a domain to hand out addresses on, and activate it.
-./bin/phenk domain add phenk.test random active
-./bin/phenk domain add public.test public active
+# Add a public domain for inboxes to live on, and activate it.
+./bin/phenk domain add phenk.test public active
+
+# Optional: private addresses need a random-pool domain and the feature flag.
+#   ./bin/phenk domain add private.test random active
+#   export PHENK_FEATURE_DISPOSABLE=true
 
 # Run everything in one process.
 ./bin/phenk all
@@ -129,7 +155,8 @@ internal/
   mimeparse/        MIME to structured output
   sanitize/         HTML sanitizing and the image proxy rewrite
   events/           the LISTEN/NOTIFY hub
-  api/              HTTP handlers, SSE, long-poll wait
+  api/              HTTP handlers, SSE, long-poll wait, llms.txt
+  extract/          verification code and account link detection
   worker/parse/     the parse job
   worker/lifecycle/ expire, purge, retention
   web/              go:embed of the built inbox app
@@ -143,6 +170,9 @@ docs/               design notes worth keeping
 
 ## Design notes
 
+- [docs/design.md](docs/design.md) — how the inbox app applies Apple's Human
+  Interface Guidelines, the values taken from them, and the decisions that
+  followed.
 - [docs/deployment.md](docs/deployment.md) — choosing a host, the DNS record
   set, and why Cloudflare is the right place for DNS and the wrong place for
   the mail server.
@@ -154,6 +184,8 @@ docs/               design notes worth keeping
 
 ## Status
 
-The ingestion, parsing, API, lifecycle and inbox surfaces are built and tested.
-What remains before this receives real mail is the infrastructure proof: a
-registered domain, MX records, and a host that accepts inbound port 25.
+The ingestion, parsing, API, agent workflow, lifecycle and inbox surfaces are
+built and tested, and the inbox app has been exercised in a real browser at
+phone, tablet and desktop widths. What remains before this receives real mail is
+the infrastructure proof: a registered domain, MX records, and a host that
+accepts inbound port 25.

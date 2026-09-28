@@ -6,7 +6,7 @@ import { site } from "@/lib/site";
 export const metadata: Metadata = {
   title: "API reference",
   description:
-    "Create an address, wait for mail on it, and read the message back as structured JSON. The whole Phenk HTTP API.",
+    "Open an inbox by name, wait for mail on it, and read the code back as structured JSON. The whole Phenk HTTP API.",
   alternates: { canonical: "/docs" },
 };
 
@@ -29,9 +29,14 @@ export default async function DocsPage() {
       <section className="mt-10">
         <h2 className="text-xl font-semibold tracking-tight">Getting started</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Create an address, then wait on it. <code className="rounded bg-muted px-1">wait</code>{" "}
-          returns immediately if anything has already arrived and otherwise holds the request open,
-          so a test does not have to poll or sleep.
+          Pick a name, use it, then wait on it.{" "}
+          <code className="rounded bg-muted px-1">wait</code> returns immediately if anything has
+          already arrived and otherwise holds the request open, so a test or an agent never has to
+          poll or sleep. There is no key and no account: the name is the inbox. An agent can read{" "}
+          <a href={`${site.appUrl}/llms.txt`} className="text-tint-text underline-offset-2 hover:underline">
+            llms.txt
+          </a>{" "}
+          for the whole flow in one page.
         </p>
         <pre className="mt-4 overflow-x-auto rounded-lg border bg-muted/40 p-4 text-xs leading-relaxed">
           <code>{EXAMPLE}</code>
@@ -41,9 +46,12 @@ export default async function DocsPage() {
       <section className="mt-12">
         <h2 className="text-xl font-semibold tracking-tight">Two kinds of address</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          A <strong>random</strong> address is unguessable, owned by the session that created it,
-          and destroyed on a deadline. A <strong>named</strong> address is one anyone can open by
-          typing its name, shared by everybody who knows it, and permanent. Named addresses can
+          A <strong>named</strong> address is the public inbox: anyone can open it by typing its
+          name, everybody who knows the name shares it, and its messages are deleted on a rolling
+          window. It is the default, and what this page is mostly about. A <strong>random</strong>{" "}
+          address is unguessable, owned by the browser session that created it, and destroyed on a
+          deadline — an optional feature, off unless the operator enables it, which{" "}
+          <code className="rounded bg-muted px-1">GET /v1/meta</code> reports. Named addresses can
           never hold a grant, a webhook, or an API key, because there is nobody to grant anything
           to.
         </p>
@@ -106,15 +114,16 @@ function groupByTag(operations: Operation[]): Record<string, Operation[]> {
   return groups;
 }
 
-const EXAMPLE = `# Take an address that lives for an hour.
-curl -sX POST ${site.url.replace("phenk.example", "api.phenk.example")}/v1/identities \\
-  -H 'content-type: application/json' \\
-  -d '{"ttl_seconds": 3600}'
+const EXAMPLE = `# Pick a name nobody else will guess, and use it in the form that sends mail.
+NAME=agent-7f3c9a21        # → agent-7f3c9a21@<public domain>
 
-# {"id":"...","address":"k7f2m9x3qz@phenk.example","cursor":0, ... }
+# Block until something arrives, or 60 seconds pass. Waiting on a name nobody
+# has used opens its inbox, and the answer comes back once the message is parsed.
+curl -s "${site.appUrl}/v1/named/$NAME/wait?timeout=60"
 
-# Block until something arrives, or 30 seconds pass.
-curl -s "…/v1/identities/$ID/wait?since=0&timeout=30"
+# The code is already detected:  .messages[0].extracted.codes[0].value
+# Wait for the next one by passing the cursor back:
+curl -s "${site.appUrl}/v1/named/$NAME/wait?since=$CURSOR&timeout=60"
 
-# Read it, with the authentication results attached.
-curl -s "…/v1/messages/$MESSAGE_ID"`;
+# Read one message in full, with SPF, DKIM and DMARC results attached.
+curl -s "${site.appUrl}/v1/messages/$MESSAGE_ID"`;

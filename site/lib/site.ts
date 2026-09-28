@@ -1,9 +1,9 @@
 /** Everything about the deployment that appears in more than one place. */
 export const site = {
   name: "Phenk",
-  tagline: "Email addresses that expire",
+  tagline: "Any name is an inbox",
   description:
-    "Disposable email for people who want one less signup, developers who want a test inbox, and agents that need to receive mail without a mailbox.",
+    "Public email inboxes you open by typing a name — no sign-up, no password. For people who want one less signup, test suites that need a real inbox, and agents that need to read a verification email.",
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://phenk.example",
   appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "https://app.phenk.example",
   repo: "https://github.com/ethchor/phenk",

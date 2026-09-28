@@ -27,13 +27,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Applied before first paint so a dark-mode visitor never sees a
-            white flash. The app surface does the same thing. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `try{const s=localStorage.getItem("phenk-theme");const d=s?s==="dark":matchMedia("(prefers-color-scheme: dark)").matches;if(d)document.documentElement.classList.add("dark")}catch{}`,
-          }}
-        />
+        {/* Appearance follows the system, through the theme's media queries,
+            exactly as the app does. There is no stored preference to apply. */}
+        <meta name="color-scheme" content="light dark" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -50,7 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className="min-h-dvh bg-background text-foreground antialiased">
+      <body className="min-h-dvh bg-canvas text-label antialiased">
         <SiteHeader />
         <main>{children}</main>
         <SiteFooter />
@@ -61,26 +57,28 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 function SiteHeader() {
   return (
-    <header className="border-b">
-      <nav className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
-        <Link href="/" className="text-lg font-semibold tracking-tight">
-          phenk<span className="text-primary">.</span>
+    // Navigation is the functional layer, so it floats as glass over the page
+    // as it scrolls (Materials).
+    <header className="sticky top-0 z-30 px-3 pt-3">
+      <nav className="glass mx-auto flex max-w-5xl items-center justify-between rounded-full py-2 pl-5 pr-2">
+        <Link href="/" className="type-headline">
+          phenk<span className="text-tint">.</span>
         </Link>
-        <div className="flex items-center gap-4 text-sm">
-          <Link href="/docs" className="text-muted-foreground hover:text-foreground">
+        <div className="flex items-center gap-1 type-subhead sm:gap-4">
+          <Link href="/docs" className="px-2 text-label-secondary hover:text-label">
             Docs
           </Link>
-          <Link href="/domains" className="text-muted-foreground hover:text-foreground">
+          <Link href="/domains" className="hidden px-2 text-label-secondary hover:text-label sm:inline">
             Domains
           </Link>
-          <Link href="/blog" className="text-muted-foreground hover:text-foreground">
+          <Link href="/blog" className="hidden px-2 text-label-secondary hover:text-label sm:inline">
             Blog
           </Link>
           <a
             href={site.appUrl}
-            className="rounded-md bg-primary px-3 py-1.5 font-medium text-primary-foreground hover:bg-primary/90"
+            className="rounded-full bg-tint px-4 py-2 font-medium text-white transition-[filter] hover:brightness-110"
           >
-            Open an inbox
+            Open Inbox
           </a>
         </div>
       </nav>
@@ -90,8 +88,8 @@ function SiteHeader() {
 
 function SiteFooter() {
   return (
-    <footer className="mt-24 border-t">
-      <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+    <footer className="mt-24 border-t border-separator">
+      <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-8 type-subhead text-label-secondary sm:flex-row sm:items-center sm:justify-between">
         <p>
           {site.name} — {site.tagline}.
         </p>
