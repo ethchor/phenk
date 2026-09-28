@@ -18,12 +18,14 @@ import { PublicInboxWarning } from "./PublicInboxWarning";
 
 interface AddressBarProps {
   identity: Identity;
+  /** False when the server has private addresses turned off. */
+  canCreatePrivate: boolean;
   onNewAddress: () => void;
   onDestroy: () => void;
   onRefresh: () => void;
 }
 
-export function AddressBar({ identity, onNewAddress, onDestroy, onRefresh }: AddressBarProps) {
+export function AddressBar({ identity, canCreatePrivate, onNewAddress, onDestroy, onRefresh }: AddressBarProps) {
   const [copied, setCopied] = useState(false);
   const remaining = useCountdown(identity.expires_at);
 
@@ -77,9 +79,11 @@ export function AddressBar({ identity, onNewAddress, onDestroy, onRefresh }: Add
               <DropdownMenuItem onSelect={onRefresh}>
                 <RefreshCw aria-hidden /> Refresh
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onNewAddress}>
-                <RefreshCw aria-hidden /> New address
-              </DropdownMenuItem>
+              {canCreatePrivate && (
+                <DropdownMenuItem onSelect={onNewAddress}>
+                  <RefreshCw aria-hidden /> New address
+                </DropdownMenuItem>
+              )}
               {!identity.public && (
                 <>
                   <DropdownMenuSeparator />

@@ -17,6 +17,8 @@ export type WaitResult = components["schemas"]["WaitResult"];
 export type AuthResult = components["schemas"]["AuthResult"];
 export type AuthResults = components["schemas"]["AuthResults"];
 export type ApiError = components["schemas"]["Error"];
+export type Meta = components["schemas"]["Meta"];
+export type Domain = components["schemas"]["Domain"];
 
 /** Thrown for any non-2xx response, carrying the server's structured error. */
 export class PhenkError extends Error {
@@ -70,6 +72,10 @@ export function createClient({ baseUrl = "" }: ClientOptions = {}) {
 
   return {
     baseUrl,
+
+    getMeta(): Promise<Meta> {
+      return request<Meta>("/v1/meta");
+    },
 
     createIdentity(ttlSeconds?: number): Promise<Identity> {
       return request<Identity>("/v1/identities", {

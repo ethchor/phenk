@@ -8,7 +8,7 @@ import { AddressBar } from "./components/AddressBar";
 import { InboxSwitcher } from "./components/InboxSwitcher";
 import { MessageList } from "./components/MessageList";
 import { MessageView } from "./components/MessageView";
-import { api, PhenkError, type Identity, type MessageSummary } from "./lib/api";
+import { api, PhenkError, type Identity, type Meta, type MessageSummary } from "./lib/api";
 import { currentInbox, forgetInbox, rememberInbox, storeTheme, storedTheme } from "./lib/storage";
 import { messagesKey, useInbox } from "./lib/use-inbox";
 
@@ -19,6 +19,7 @@ export function App() {
   const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const [startupError, setStartupError] = useState<string | null>(null);
+  const [meta, setMeta] = useState<Meta | null>(null);
 
   const adopt = useCallback((next: Identity) => {
     setIdentity(next);
@@ -33,6 +34,18 @@ export function App() {
     let cancelled = false;
 
     (async () => {
+      let offered: Meta;
+      try {
+        offered = await api.getMeta();
+        if (cancelled) return;
+        setMeta(offered);
+      } catch (cause) {
+        if (!cancelled) {
+          setStartupError(cause instanceof PhenkError ? cause.message : "Could not reach the server");
+        }
+        return;
+      }
+
       const remembered = currentInbox();
       if (remembered) {
         try {
@@ -51,6 +64,10 @@ export function App() {
           forgetInbox(remembered.address);
         }
       }
+
+      // With private addresses off, there is nothing to create on load: the
+      // person picks a name instead.
+      if (!offered.features.disposable) return;
 
       try {
         const created = await api.createIdentity();
@@ -131,6 +148,17 @@ export function App() {
     );
   }
 
+  if (!identity && meta && !meta.features.disposable) {
+    return (
+      <main className="mx-auto flex min-h-full max-w-md flex-col justify-center gap-4 px-4">
+        <h1 className="text-lg font-semibold tracking-tight">
+          phenk<span className="text-primary">.</span>
+        </h1>
+        <InboxSwitcher onOpen={openNamed} busy={busy} />
+      </main>
+    );
+  }
+
   if (!identity) {
     return (
       <main className="flex min-h-full items-center justify-center">
@@ -153,6 +181,7 @@ export function App() {
 
       <AddressBar
         identity={identity}
+        canCreatePrivate={meta?.features.disposable ?? false}
         onNewAddress={newAddress}
         onDestroy={destroy}
         onRefresh={refresh}

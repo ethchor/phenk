@@ -30,6 +30,14 @@ func (s *Server) CreateIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Private addresses are an optional feature. With it off, the public
+	// inbox above is the only thing this endpoint hands out.
+	if !s.cfg.Disposable {
+		writeError(w, http.StatusForbidden, codeFeatureDisabled,
+			"Private addresses are turned off on this server. Open a public inbox by name instead")
+		return
+	}
+
 	ttl := s.cfg.DefaultTTL
 	if request.TtlSeconds != nil {
 		ttl = time.Duration(*request.TtlSeconds) * time.Second
@@ -173,20 +181,10 @@ func identityResponse(identity *core.Identity, domainName string) apigen.Identit
 // are listed — a burned one still receives mail for the identities it already
 // hosts, but nothing new lands there.
 func (s *Server) ListDomains(w http.ResponseWriter, r *http.Request) {
-	out := []apigen.Domain{}
-
-	for _, pool := range []core.Pool{core.PoolRandom, core.PoolPublic} {
-		domains, err := pg.AllocatableDomains(r.Context(), s.db, pool)
-		if err != nil {
-			internalError(w, r, "listing domains", err)
-			return
-		}
-		for _, domain := range domains {
-			out = append(out, apigen.Domain{
-				Name: domain.Name,
-				Pool: apigen.DomainPool(domain.Pool),
-			})
-		}
+	out, err := s.offeredDomains(r)
+	if err != nil {
+		internalError(w, r, "listing domains", err)
+		return
 	}
 
 	// This one response is safe to cache: it changes when an operator rotates

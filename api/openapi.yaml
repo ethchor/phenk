@@ -3,19 +3,29 @@ openapi: 3.1.0
 info:
   title: Phenk
   version: 0.1.0
-  summary: Ephemeral email
+  summary: Public inboxes for people and agents
   description: |
-    Phenk hands out email addresses that expire.
+    Type any name and you have an inbox. No account, no password, no setup:
+    mail sent to `anything@<public domain>` lands in the inbox called
+    `anything`, and anyone who knows the name can read it. Messages are kept
+    for a rolling window and then deleted.
 
-    There are two kinds of address and the difference matters. A **random**
-    address is unguessable, owned by the session that created it, and destroyed
-    on a deadline. A **named** address is one anybody can open by typing its
-    name, shared by everybody who knows it, and permanent. Named addresses can
-    never hold a grant, a webhook, or an API key, because there is no one to
-    grant anything to.
+    That makes Phenk useful to two audiences. People use it to receive a
+    one-off verification email without handing out their real address.
+    Agents and test suites use it to receive mail during an automated flow:
+    pick a name, use it, then long-poll `GET /v1/named/{address}/wait` until
+    the message arrives. Every message carries any verification codes and
+    links detected in it, so the common case needs no parsing at all.
 
-    Ownership of a random identity is the session cookie in v0. API keys come
-    later.
+    There are two kinds of address and the difference matters. A **named**
+    address is the public inbox above: shared by everybody who knows the name,
+    and permanent. A **random** address is unguessable, owned by the session
+    that created it, and destroyed on a deadline. Random addresses are an
+    optional feature, off unless the operator enables it; `GET /v1/meta`
+    says which features this server offers.
+
+    Named addresses can never hold a grant, a webhook, or an API key, because
+    there is no one to grant anything to.
   license:
     name: AGPL-3.0-or-later
 
@@ -32,6 +42,8 @@ tags:
     description: Reading mail
   - name: named
     description: Shared, public inboxes
+  - name: meta
+    description: What this server offers
 
 paths:
   /v1/identities:
@@ -40,7 +52,8 @@ paths:
       tags: [identities]
       summary: Allocate an address
       description: |
-        Creates a random, session-owned address on a random-pool domain.
+        Creates a random, session-owned address on a random-pool domain. This
+        is an optional feature and is off by default; see `GET /v1/meta`.
 
         Passing `kind: named` requires `local_part` and is equivalent to
         `POST /v1/named`, including its rate limits. The resulting inbox is
@@ -58,6 +71,14 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Identity' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '403':
+          description: |
+            Random addresses are turned off on this server, which is the
+            default. `kind: named` still works. `GET /v1/meta` reports which
+            features are on.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503':
           description: No domain in the pool can currently hand out addresses.
@@ -313,6 +334,23 @@ paths:
           description: The URL resolves somewhere the proxy will not go.
         '502':
           description: The remote host did not return a usable image.
+
+  /v1/meta:
+    get:
+      operationId: getMeta
+      tags: [meta]
+      summary: What this server offers
+      description: |
+        Which features are on, which domains an address can land on, and the
+        limits a client should plan around. The inbox app reads this once on
+        load to decide what to offer; an agent can read it to learn which
+        domain to put in a signup form.
+      responses:
+        '200':
+          description: The server's capabilities.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Meta' }
 
   /v1/domains:
     get:
@@ -582,6 +620,34 @@ components:
           description: |
             `random` serves generated, session-owned addresses. `public` serves
             shared named inboxes, which anyone who guesses the name can read.
+
+    Meta:
+      type: object
+      required: [features, domains, public_retention_hours, max_wait_seconds, version]
+      properties:
+        features:
+          type: object
+          required: [disposable]
+          properties:
+            disposable:
+              type: boolean
+              description: |
+                Whether private, expiring random addresses can be created. Off
+                by default. When off, only public inboxes are offered and
+                `POST /v1/identities` without `kind: named` returns 403.
+        domains:
+          type: array
+          description: |
+            The domains currently handing out addresses. Random-pool domains
+            are omitted when random addresses are turned off.
+          items: { $ref: '#/components/schemas/Domain' }
+        public_retention_hours:
+          type: integer
+          description: How long a public inbox keeps each message before deleting it.
+        max_wait_seconds:
+          type: integer
+          description: The longest a `wait` request will be held open.
+        version: { type: string }
 
     Health:
       type: object
