@@ -15,7 +15,8 @@ export interface paths {
         put?: never;
         /**
          * Allocate an address
-         * @description Creates a random, session-owned address on a random-pool domain.
+         * @description Creates a random, session-owned address on a random-pool domain. This
+         *     is an optional feature and is off by default; see `GET /v1/meta`.
          *
          *     Passing `kind: named` requires `local_part` and is equivalent to
          *     `POST /v1/named`, including its rate limits. The resulting inbox is
@@ -303,6 +304,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What this server offers
+         * @description Which features are on, which domains an address can land on, and the
+         *     limits a client should plan around. The inbox app reads this once on
+         *     load to decide what to offer; an agent can read it to learn which
+         *     domain to put in a signup form.
+         */
+        get: operations["getMeta"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/domains": {
         parameters: {
             query?: never;
@@ -491,6 +515,26 @@ export interface components {
              */
             pool: "random" | "public";
         };
+        Meta: {
+            features: {
+                /**
+                 * @description Whether private, expiring random addresses can be created. Off
+                 *     by default. When off, only public inboxes are offered and
+                 *     `POST /v1/identities` without `kind: named` returns 403.
+                 */
+                disposable: boolean;
+            };
+            /**
+             * @description The domains currently handing out addresses. Random-pool domains
+             *     are omitted when random addresses are turned off.
+             */
+            domains: components["schemas"]["Domain"][];
+            /** @description How long a public inbox keeps each message before deleting it. */
+            public_retention_hours: number;
+            /** @description The longest a `wait` request will be held open. */
+            max_wait_seconds: number;
+            version: string;
+        };
         Health: {
             /** @enum {string} */
             status: "ok" | "degraded";
@@ -573,6 +617,19 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            /**
+             * @description Random addresses are turned off on this server, which is the
+             *     default. `kind: named` still works. `GET /v1/meta` reports which
+             *     features are on.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             429: components["responses"]["TooManyRequests"];
             /** @description No domain in the pool can currently hand out addresses. */
             503: {
@@ -921,6 +978,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    getMeta: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The server's capabilities. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Meta"];
+                };
             };
         };
     };

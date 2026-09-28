@@ -119,7 +119,11 @@ func newHarness(t *testing.T, configure ...func(*Config)) *harness {
 		DefaultTTL:     time.Hour,
 		MaxTTL:         24 * time.Hour,
 		NamedPerIPHour: 1000,
-		Version:        "test",
+		// Most of this suite exercises private addresses, so the harness turns
+		// them on. Tests of the default, public-only configuration switch it
+		// off explicitly with withoutDisposable.
+		Disposable: true,
+		Version:    "test",
 	}
 	for _, fn := range configure {
 		fn(&cfg)

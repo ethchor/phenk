@@ -28,6 +28,21 @@ type Config struct {
 	API      API        `envPrefix:"PHENK_API_"`
 	Identity Identity   `envPrefix:"PHENK_IDENTITY_"`
 	Worker   Worker     `envPrefix:"PHENK_WORKER_"`
+	Features Features   `envPrefix:"PHENK_FEATURE_"`
+}
+
+// Features switches whole product surfaces on or off.
+//
+// Phenk's primary product is the public inbox: type any name, read whatever
+// arrives, no account. The private, expiring address is the optional one, and
+// it is off unless an operator asks for it.
+type Features struct {
+	// Disposable enables private addresses that belong to a browser session
+	// and are destroyed on a deadline. Turning it off stops new ones being
+	// created; any that already exist keep receiving mail until they expire,
+	// because rejecting mail for a live address would break the promise made
+	// when it was handed out.
+	Disposable bool `env:"DISPOSABLE" envDefault:"false"`
 }
 
 // Worker configures the job queue.

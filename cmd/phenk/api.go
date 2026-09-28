@@ -25,7 +25,10 @@ func (r *runtime) runAPI(ctx context.Context) error {
 		DefaultTTL:     r.cfg.Identity.DefaultTTL,
 		MaxTTL:         r.cfg.Identity.MaxTTL,
 		NamedPerIPHour: r.cfg.SMTP.ProvisionsPerIPHour,
-		Version:        version,
+		// The public inbox is the product; the private address is opt-in.
+		Disposable:      r.cfg.Features.Disposable,
+		PublicRetention: r.cfg.Identity.NamedRetention,
+		Version:         version,
 	}, r.db, r.blobs, r.keyring, r.allocator, hub)
 
 	httpServer := &http.Server{

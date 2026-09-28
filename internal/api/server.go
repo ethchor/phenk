@@ -38,6 +38,15 @@ type Config struct {
 	// matching the limit the SMTP path applies to the same operation.
 	NamedPerIPHour int
 
+	// Disposable enables private, expiring random addresses. The zero value
+	// leaves them off, which is the product default: Phenk is a public-inbox
+	// service first, and the private address is an opt-in extra.
+	Disposable bool
+
+	// PublicRetention is how long a public inbox keeps each message. It is
+	// reported to clients so the app can say so before an inbox is opened.
+	PublicRetention time.Duration
+
 	// Version is reported by the health endpoint.
 	Version string
 }
@@ -57,6 +66,9 @@ func (c *Config) withDefaults() {
 	}
 	if c.NamedPerIPHour <= 0 {
 		c.NamedPerIPHour = 20
+	}
+	if c.PublicRetention <= 0 {
+		c.PublicRetention = 168 * time.Hour
 	}
 }
 

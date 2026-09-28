@@ -63,6 +63,9 @@ services:
       PHENK_API_ADDR: ":8080"
       PHENK_API_PUBLIC_URL: https://${APP_HOSTNAME:?set APP_HOSTNAME}
       PHENK_API_COOKIE_SECURE: "true"
+      # Public inboxes are the product. Private, expiring addresses are an
+      # opt-in extra, off unless set in .env.
+      PHENK_FEATURE_DISPOSABLE: ${PHENK_FEATURE_DISPOSABLE:-false}
     volumes:
       - blob-data:/var/lib/phenk/blobs
       - tls-certs:/etc/phenk/tls:ro
