@@ -100,6 +100,10 @@ export interface paths {
          *     The already-arrived check happens before any subscription, which is the
          *     whole point: the gap between creating an address and first waiting on it
          *     is exactly where real mail lands.
+         *
+         *     Messages are returned once parsed, so their subject, preview and
+         *     `extracted` are filled in. If parsing stalls, a message is returned
+         *     after a short grace period anyway, in state `received`.
          */
         get: operations["waitForMessages"];
         put?: never;
@@ -242,6 +246,71 @@ export interface paths {
          * @description No ownership check, by design. There is no owner.
          */
         get: operations["listNamedMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/named/{address}/wait": {
+        parameters: {
+            query?: {
+                /** @description Return only what arrived after this cursor. */
+                since?: components["parameters"]["Since"];
+                /** @description Seconds to hold the request open. Capped at the server maximum, 120 by default. */
+                timeout?: number;
+            };
+            header?: never;
+            path: {
+                /** @description A local part, or a full address on a public-pool domain. */
+                address: components["parameters"]["NamedAddress"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Long-poll a public inbox for the next message
+         * @description The agent-facing call. Returns immediately if anything has already
+         *     arrived after `since`, and otherwise holds the request open until
+         *     something does or the timeout expires. Each returned message carries
+         *     the verification codes and links detected in it, so the usual flow is
+         *     one request: wait, then read `messages[0].extracted.codes[0].value`.
+         *
+         *     Messages are returned once parsed, so `extracted` is filled in. If
+         *     parsing stalls, a message is returned after a short grace period
+         *     anyway, in state `received`.
+         *
+         *     Waiting on a name nobody has used yet opens it first, exactly as
+         *     `POST /v1/named` would and under the same rate limit. Without that the
+         *     first wait on a fresh name would 404 until the very email being waited
+         *     for arrived.
+         */
+        get: operations["waitForNamedMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/named/{address}/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A local part, or a full address on a public-pool domain. */
+                address: components["parameters"]["NamedAddress"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the newest message in a public inbox
+         * @description The newest message, in full — the same shape as `GET /v1/messages/{id}`.
+         *     404 when the inbox does not exist or has no mail.
+         */
+        get: operations["getLatestNamedMessage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -468,6 +537,41 @@ export interface components {
             state: "received" | "parsed" | "failed";
             attachment_count: number;
             auth: components["schemas"]["AuthResults"];
+            extracted?: components["schemas"]["Extracted"];
+        };
+        /**
+         * @description What an automated reader usually came for, found by rules rather than
+         *     a model. Present once a message is parsed. Detection is deliberately
+         *     conservative — a code is only reported when the words around it say it
+         *     is one — so an empty list is common and a reported code is usually
+         *     right. It is still a guess: `context` shows where it came from.
+         */
+        Extracted: {
+            /** @description Verification codes, most likely first. At most three. */
+            codes: components["schemas"]["DetectedCode"][];
+            /**
+             * @description http and https links, account-acting ones first and unsubscribe
+             *     links last. At most ten.
+             */
+            links: components["schemas"]["DetectedLink"][];
+        };
+        DetectedCode: {
+            /** @description The code with any grouping removed, as a form expects it. */
+            value: string;
+            /** @description The line the code was found on. */
+            context: string;
+        };
+        DetectedLink: {
+            /** Format: uri */
+            url: string;
+            /** @description The link's visible text, when it had any. */
+            text: string;
+            /**
+             * @description `verify` acts on an account: confirm, verify, activate, sign in,
+             *     reset a password, accept an invitation. `unsubscribe` stops mail.
+             * @enum {string}
+             */
+            kind: "verify" | "unsubscribe" | "other";
         };
         Message: components["schemas"]["MessageSummary"] & {
             to: string[];
@@ -902,6 +1006,63 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    waitForNamedMessages: {
+        parameters: {
+            query?: {
+                /** @description Return only what arrived after this cursor. */
+                since?: components["parameters"]["Since"];
+                /** @description Seconds to hold the request open. Capped at the server maximum, 120 by default. */
+                timeout?: number;
+            };
+            header?: never;
+            path: {
+                /** @description A local part, or a full address on a public-pool domain. */
+                address: components["parameters"]["NamedAddress"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /**
+             * @description Zero or more messages. An empty list with `timed_out: true` means
+             *     nothing arrived; call again with the returned cursor.
+             */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaitResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getLatestNamedMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A local part, or a full address on a public-pool domain. */
+                address: components["parameters"]["NamedAddress"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The newest message. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Message"];
                 };
             };
             404: components["responses"]["NotFound"];

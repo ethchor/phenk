@@ -47,6 +47,10 @@ type Config struct {
 	// reported to clients so the app can say so before an inbox is opened.
 	PublicRetention time.Duration
 
+	// ParseGrace bounds how long a wait that already has mail holds it for
+	// the parse to finish. See settle in wait.go.
+	ParseGrace time.Duration
+
 	// Version is reported by the health endpoint.
 	Version string
 }
@@ -69,6 +73,9 @@ func (c *Config) withDefaults() {
 	}
 	if c.PublicRetention <= 0 {
 		c.PublicRetention = 168 * time.Hour
+	}
+	if c.ParseGrace <= 0 {
+		c.ParseGrace = defaultParseGrace
 	}
 }
 
@@ -115,6 +122,10 @@ func (s *Server) Handler() http.Handler {
 	// Streaming and long-polling handlers manage their own deadlines, so a
 	// blanket timeout here would cut them off mid-wait.
 	router.Use(requestLogger)
+
+	// The agent guide sits outside the versioned API: it is a document about
+	// the API, at the path agents already look for one.
+	router.Get("/llms.txt", s.llmsTxt)
 
 	handler := apigen.HandlerFromMux(s, router)
 

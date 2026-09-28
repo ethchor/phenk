@@ -31,8 +31,22 @@ func (s *Server) openNamed(w http.ResponseWriter, r *http.Request, localPart str
 		return
 	}
 
-	// Creating a public inbox is the abusable operation on this surface, and
-	// it is limited exactly as the SMTP path limits the same operation.
+	// Reopening an inbox that already exists costs nothing. The limit is on
+	// creating public inboxes, which is the abusable operation; charging for
+	// a reload would lock out anyone who simply keeps a tab open, and every
+	// agent that waits on the same inbox twice.
+	existing, domain, err := pg.NamedIdentityByLocalPart(r.Context(), s.db, localPart)
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, identityResponse(existing, domain.Name))
+		return
+	case !errors.Is(err, pg.ErrNotFound):
+		internalError(w, r, "opening a named inbox", err)
+		return
+	}
+
+	// Creating a public inbox is limited exactly as the SMTP path limits the
+	// same operation.
 	if !s.namedRate.Allow(clientIP(r)) {
 		writeError(w, http.StatusTooManyRequests, codeRateLimited,
 			"Too many new addresses from your network, try again later")
@@ -80,54 +94,68 @@ func (s *Server) StreamNamedInbox(w http.ResponseWriter, r *http.Request, addres
 	s.stream(w, r, identity, since(params.Since))
 }
 
-// namedIdentity resolves a public inbox by name.
+// errNotPublic means an address names something that is not, and can never
+// be, a public inbox: a malformed name, a random-pool domain, or a random
+// identity. Callers report it as not found.
+var errNotPublic = errors.New("api: not a public inbox")
+
+// namedIdentity resolves a public inbox by name, writing a 404 when there is
+// none.
+func (s *Server) namedIdentity(w http.ResponseWriter, r *http.Request, address string) (*core.Identity, bool) {
+	identity, err := s.lookupNamed(r, address)
+	switch {
+	case err == nil:
+		return identity, true
+	case errors.Is(err, pg.ErrNotFound), errors.Is(err, errNotPublic):
+		notFound(w)
+	default:
+		internalError(w, r, "resolving a named inbox", err)
+	}
+	return nil, false
+}
+
+// lookupNamed resolves a public inbox by name without writing a response. It
+// returns pg.ErrNotFound for a valid name nobody has used yet, and errNotPublic
+// for anything that could never be a public inbox.
 //
 // It performs no ownership check, by design: a named inbox has no owner. It
 // does check the kind, in the handler rather than only by route, so that a
 // guessed identifier cannot reach a random inbox through the public door. That
 // is invariant 9 read from the other direction, and it is the rule that keeps
 // the shared-inbox feature out of the security model.
-func (s *Server) namedIdentity(w http.ResponseWriter, r *http.Request, address string) (*core.Identity, bool) {
+func (s *Server) lookupNamed(r *http.Request, address string) (*core.Identity, error) {
 	localPart, domainName := splitNamed(address)
 	if err := core.ValidateNamedLocalPart(localPart); err != nil {
-		notFound(w)
-		return nil, false
+		return nil, errNotPublic
 	}
 
-	var (
-		identity *core.Identity
-		err      error
-	)
+	var identity *core.Identity
 	if domainName != "" {
-		var domain *core.Domain
-		domain, err = pg.DomainByName(r.Context(), s.db, domainName)
-		if err == nil {
-			if domain.Pool != core.PoolPublic {
-				// A random-pool domain never hosts a named inbox, and asking
-				// for one there must not become a way to probe it.
-				notFound(w)
-				return nil, false
-			}
-			identity, err = pg.IdentityByAddress(r.Context(), s.db, localPart, domain.ID)
+		domain, err := pg.DomainByName(r.Context(), s.db, domainName)
+		if err != nil {
+			return nil, err
+		}
+		if domain.Pool != core.PoolPublic {
+			// A random-pool domain never hosts a named inbox, and asking
+			// for one there must not become a way to probe it.
+			return nil, errNotPublic
+		}
+		identity, err = pg.IdentityByAddress(r.Context(), s.db, localPart, domain.ID)
+		if err != nil {
+			return nil, err
 		}
 	} else {
+		var err error
 		identity, _, err = pg.NamedIdentityByLocalPart(r.Context(), s.db, localPart)
-	}
-
-	if errors.Is(err, pg.ErrNotFound) {
-		notFound(w)
-		return nil, false
-	}
-	if err != nil {
-		internalError(w, r, "resolving a named inbox", err)
-		return nil, false
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if identity.Kind != core.KindNamed {
-		notFound(w)
-		return nil, false
+		return nil, errNotPublic
 	}
-	return identity, true
+	return identity, nil
 }
 
 // splitNamed accepts either a bare local part or a full address.

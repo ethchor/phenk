@@ -1,0 +1,67 @@
+# Phenk
+
+> Public email inboxes for people and agents. Any name is an inbox: mail sent
+> to NAME@{{.Domain}} can be read by anyone who knows NAME. No account, no API
+> key, no setup. Messages are deleted after {{.RetentionHours}} hours.
+
+Use Phenk to receive an email during an automated task — a signup
+confirmation, a one-time code, a magic sign-in link — and read it back over
+HTTP. Phenk only receives mail. It never sends any.
+
+## The whole flow
+
+1. Pick a name nobody else will guess, such as `agent-7f3c9a21`. Anyone who
+   knows a name can read its inbox, so use a fresh name for each task and do
+   not put anything private through it.
+2. Enter `NAME@{{.Domain}}` in the form that sends the email.
+3. Wait for the email. This holds the request open for up to
+   {{.MaxWaitSeconds}} seconds and returns as soon as mail arrives:
+
+       GET {{.BaseURL}}/v1/named/NAME/wait?timeout={{.MaxWaitSeconds}}
+
+   The response is `{"messages": [...], "cursor": N, "timed_out": false}`.
+   If `timed_out` is true nothing arrived yet: call it again.
+4. Read the code or the link. Every message carries what was detected in it:
+
+       "extracted": {
+         "codes": [{"value": "482913", "context": "Your code is 482913."}],
+         "links": [{"url": "https://…", "text": "Verify email", "kind": "verify"}]
+       }
+
+   The code you want is almost always `messages[0].extracted.codes[0].value`.
+   The link you want is the first one whose `kind` is `verify`.
+
+## Waiting for the next email
+
+Every response includes a `cursor`. Pass it back as `since` and only mail that
+arrived after it is returned — which is how you wait for a second email
+without seeing the first one again:
+
+    GET {{.BaseURL}}/v1/named/NAME/wait?since=CURSOR&timeout={{.MaxWaitSeconds}}
+
+To ignore anything already in an inbox before you trigger an email, list it
+first and wait from its cursor:
+
+    GET {{.BaseURL}}/v1/named/NAME/messages
+
+## Other endpoints
+
+- `GET {{.BaseURL}}/v1/named/NAME/latest` — the newest message, in full.
+- `GET {{.BaseURL}}/v1/messages/MESSAGE_ID` — one message: `text`, sanitized
+  `html`, `attachments`, and `extracted`.
+- `GET {{.BaseURL}}/v1/messages/MESSAGE_ID/raw` — the original MIME message.
+- `GET {{.BaseURL}}/v1/meta` — the domains on offer and the limits above.
+
+`NAME` may also be a full address, `NAME@{{.Domain}}`. Names are 3 to 64
+characters of lower-case letters, digits, dots, dashes and underscores, and
+start with a letter or digit. A `+tag` is ignored.
+
+## Things to know
+
+- Detected codes and links are found by rules, not guaranteed. If a code is
+  rejected, read its `context`, or the message `text`.
+- Never follow a link whose `kind` is `unsubscribe` when you meant to verify.
+- Creating an inbox for a name that has never been used is rate limited per
+  client address. Reading and waiting on an existing inbox is not.
+- Inboxes are public. Do not send passwords, personal data, or anything you
+  would not post publicly to one.

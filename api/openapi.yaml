@@ -150,6 +150,10 @@ paths:
         The already-arrived check happens before any subscription, which is the
         whole point: the gap between creating an address and first waiting on it
         is exactly where real mail lands.
+
+        Messages are returned once parsed, so their subject, preview and
+        `extracted` are filled in. If parsing stalls, a message is returned
+        after a short grace period anyway, in state `received`.
       responses:
         '200':
           description: |
@@ -281,6 +285,62 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/MessageList' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/named/{address}/wait:
+    parameters:
+      - $ref: '#/components/parameters/NamedAddress'
+      - $ref: '#/components/parameters/Since'
+      - name: timeout
+        in: query
+        description: Seconds to hold the request open. Capped at the server maximum, 120 by default.
+        schema: { type: integer, minimum: 1, maximum: 120, default: 30 }
+    get:
+      operationId: waitForNamedMessages
+      tags: [named]
+      summary: Long-poll a public inbox for the next message
+      description: |
+        The agent-facing call. Returns immediately if anything has already
+        arrived after `since`, and otherwise holds the request open until
+        something does or the timeout expires. Each returned message carries
+        the verification codes and links detected in it, so the usual flow is
+        one request: wait, then read `messages[0].extracted.codes[0].value`.
+
+        Messages are returned once parsed, so `extracted` is filled in. If
+        parsing stalls, a message is returned after a short grace period
+        anyway, in state `received`.
+
+        Waiting on a name nobody has used yet opens it first, exactly as
+        `POST /v1/named` would and under the same rate limit. Without that the
+        first wait on a fresh name would 404 until the very email being waited
+        for arrived.
+      responses:
+        '200':
+          description: |
+            Zero or more messages. An empty list with `timed_out: true` means
+            nothing arrived; call again with the returned cursor.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WaitResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /v1/named/{address}/latest:
+    parameters:
+      - $ref: '#/components/parameters/NamedAddress'
+    get:
+      operationId: getLatestNamedMessage
+      tags: [named]
+      summary: Read the newest message in a public inbox
+      description: |
+        The newest message, in full — the same shape as `GET /v1/messages/{id}`.
+        404 when the inbox does not exist or has no mail.
+      responses:
+        '200':
+          description: The newest message.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/named/{address}/stream:
@@ -550,6 +610,55 @@ components:
             be parsed; the raw message is still downloadable.
         attachment_count: { type: integer }
         auth: { $ref: '#/components/schemas/AuthResults' }
+        extracted:
+          $ref: '#/components/schemas/Extracted'
+
+    Extracted:
+      type: object
+      required: [codes, links]
+      description: |
+        What an automated reader usually came for, found by rules rather than
+        a model. Present once a message is parsed. Detection is deliberately
+        conservative — a code is only reported when the words around it say it
+        is one — so an empty list is common and a reported code is usually
+        right. It is still a guess: `context` shows where it came from.
+      properties:
+        codes:
+          type: array
+          description: Verification codes, most likely first. At most three.
+          items: { $ref: '#/components/schemas/DetectedCode' }
+        links:
+          type: array
+          description: |
+            http and https links, account-acting ones first and unsubscribe
+            links last. At most ten.
+          items: { $ref: '#/components/schemas/DetectedLink' }
+
+    DetectedCode:
+      type: object
+      required: [value, context]
+      properties:
+        value:
+          type: string
+          description: The code with any grouping removed, as a form expects it.
+        context:
+          type: string
+          description: The line the code was found on.
+
+    DetectedLink:
+      type: object
+      required: [url, text, kind]
+      properties:
+        url: { type: string, format: uri }
+        text:
+          type: string
+          description: The link's visible text, when it had any.
+        kind:
+          type: string
+          enum: [verify, unsubscribe, other]
+          description: |
+            `verify` acts on an account: confirm, verify, activate, sign in,
+            reset a password, accept an invitation. `unsubscribe` stops mail.
 
     Message:
       allOf:
