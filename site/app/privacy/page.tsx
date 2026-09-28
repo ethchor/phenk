@@ -32,13 +32,14 @@ export default function PrivacyPage() {
 
       <Section title="How long">
         <p>
-          A generated address lives for the period you chose when you created it. Shortly after it
-          expires, its contents are destroyed and the address is retired permanently — it is never
-          handed to anyone else.
+          A public inbox is permanent, but its messages are not: each one is removed after a rolling
+          retention window — seven days unless the operator sets another — and older messages are
+          also removed when the inbox is full.
         </p>
         <p>
-          A public inbox is permanent, but its messages are not: each one is removed after a rolling
-          retention window, and older messages are also removed when the inbox is full.
+          Where the operator has enabled private addresses, one lives for the period chosen when it
+          was created. Shortly after it expires, its contents are destroyed and the address is
+          retired permanently — it is never handed to anyone else.
         </p>
       </Section>
 
@@ -60,9 +61,11 @@ export default function PrivacyPage() {
 
       <Section title="In your browser">
         <p>
-          One cookie, holding a random value that identifies which addresses are yours. It contains
-          nothing about you and is not used for anything else. Your browser also remembers which
-          inbox you had open and which theme you prefer.
+          Your browser remembers the names of inboxes you opened, so you can go back to them, and
+          which messages you have read, for the length of the session. Never the messages
+          themselves. Where private addresses are enabled, one cookie holds a random value that
+          identifies which of them are yours; it contains nothing about you and is used for nothing
+          else. There is no appearance setting to remember: Phenk follows your system.
         </p>
       </Section>
 
