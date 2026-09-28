@@ -11,6 +11,7 @@ import (
 	"github.com/ethchor/phenk/internal/api/apigen"
 	"github.com/ethchor/phenk/internal/core"
 	"github.com/ethchor/phenk/internal/crypto"
+	"github.com/ethchor/phenk/internal/extract"
 	"github.com/ethchor/phenk/internal/store/blob"
 	"github.com/ethchor/phenk/internal/store/pg"
 	"github.com/ethchor/phenk/internal/worker/parse"
@@ -50,9 +51,27 @@ func (s *Server) messagePage(r *http.Request, identity *core.Identity, sinceSeq 
 	// moment later.
 	cursor := sinceSeq
 	summaries := make([]apigen.MessageSummary, 0, len(deliveries))
+	if len(deliveries) == 0 {
+		// Nearly every poll ends here, and it should cost one query.
+		return summaries, cursor, nil
+	}
+
+	// Detection reads each message's body, and the bodies are encrypted under
+	// the identity's key, so the key is unwrapped once for the page rather
+	// than once per message. A purged identity has no key left and gets no
+	// detection, which is right: it has nothing left to read either.
+	var key *crypto.DataKey
+	if len(identity.WrappedDataKey) > 0 {
+		key, err = s.keyring.Unwrap(identity.ID, identity.WrappedDataKey)
+		if err != nil {
+			return nil, 0, err
+		}
+		defer key.Destroy()
+	}
+
 	for i := range deliveries {
 		delivery := &deliveries[i]
-		summary, err := s.summarize(r, identity, delivery)
+		summary, err := s.summarize(r, identity, delivery, key)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -65,7 +84,11 @@ func (s *Server) messagePage(r *http.Request, identity *core.Identity, sinceSeq 
 // summarize renders a delivery for a list. A message that has not been parsed
 // yet still appears, with what is known of it: the alternative is an inbox that
 // looks empty for a second after mail has visibly arrived.
-func (s *Server) summarize(r *http.Request, identity *core.Identity, delivery *core.Delivery) (apigen.MessageSummary, error) {
+//
+// With a key, the summary also carries the codes and links detected in the
+// message, which is what lets an agent go from a wait straight to the code. A
+// nil key skips detection, for callers that decrypt the bodies themselves.
+func (s *Server) summarize(r *http.Request, identity *core.Identity, delivery *core.Delivery, key *crypto.DataKey) (apigen.MessageSummary, error) {
 	summary := apigen.MessageSummary{
 		Id:         mustAPIUUID(delivery.ID),
 		Seq:        delivery.Seq,
@@ -100,6 +123,14 @@ func (s *Server) summarize(r *http.Request, identity *core.Identity, delivery *c
 	}
 	summary.SentAt = parsed.SentAt
 
+	if key != nil {
+		text, html, err := openBodies(key, parsed)
+		if err != nil {
+			return summary, err
+		}
+		summary.Extracted = extracted(parsed.Subject, text, html)
+	}
+
 	attachments, err := pg.AttachmentsForDelivery(r.Context(), s.db, delivery.ID)
 	if err != nil {
 		return summary, err
@@ -108,14 +139,61 @@ func (s *Server) summarize(r *http.Request, identity *core.Identity, delivery *c
 	return summary, nil
 }
 
+// openBodies decrypts a parsed message's text and HTML bodies. Either may be
+// empty; a message can carry one, the other, or both.
+func openBodies(key *crypto.DataKey, parsed *core.ParsedMessage) (text, html string, err error) {
+	if len(parsed.TextBody) > 0 {
+		plain, err := key.Open(parsed.TextBody)
+		if err != nil {
+			return "", "", fmt.Errorf("decrypting a text body: %w", err)
+		}
+		text = string(plain)
+	}
+	if len(parsed.HTMLBody) > 0 {
+		markup, err := key.Open(parsed.HTMLBody)
+		if err != nil {
+			return "", "", fmt.Errorf("decrypting an html body: %w", err)
+		}
+		html = string(markup)
+	}
+	return text, html, nil
+}
+
+// extracted runs detection and renders it for the API.
+func extracted(subject, text, html string) *apigen.Extracted {
+	found := extract.Message(subject, text, html)
+	out := &apigen.Extracted{
+		Codes: make([]apigen.DetectedCode, 0, len(found.Codes)),
+		Links: make([]apigen.DetectedLink, 0, len(found.Links)),
+	}
+	for _, c := range found.Codes {
+		out.Codes = append(out.Codes, apigen.DetectedCode{Value: c.Value, Context: c.Context})
+	}
+	for _, l := range found.Links {
+		out.Links = append(out.Links, apigen.DetectedLink{
+			Url:  l.URL,
+			Text: l.Text,
+			Kind: apigen.DetectedLinkKind(l.Kind),
+		})
+	}
+	return out
+}
+
 // GetMessage implements apigen.ServerInterface.
 func (s *Server) GetMessage(w http.ResponseWriter, r *http.Request, id apigen.MessageId) {
 	delivery, identity, ok := s.readableMessage(w, r, id)
 	if !ok {
 		return
 	}
+	s.writeMessage(w, r, delivery, identity)
+}
 
-	summary, err := s.summarize(r, identity, delivery)
+// writeMessage renders one message in full. The caller has already decided the
+// reader may see it.
+func (s *Server) writeMessage(w http.ResponseWriter, r *http.Request, delivery *core.Delivery, identity *core.Identity) {
+	// No key: the bodies are decrypted below anyway, and detection runs on
+	// those rather than decrypting them twice.
+	summary, err := s.summarize(r, identity, delivery, nil)
 	if err != nil {
 		internalError(w, r, "reading a message", err)
 		return
@@ -141,26 +219,20 @@ func (s *Server) GetMessage(w http.ResponseWriter, r *http.Request, id apigen.Me
 	}
 	defer dataKey.Destroy()
 
-	if len(parsed.TextBody) > 0 {
-		text, err := dataKey.Open(parsed.TextBody)
-		if err != nil {
-			internalError(w, r, "decrypting a text body", err)
-			return
-		}
-		body := string(text)
-		message.Text = &body
+	text, html, err := openBodies(dataKey, parsed)
+	if err != nil {
+		internalError(w, r, "reading a message", err)
+		return
 	}
-	if len(parsed.HTMLBody) > 0 {
-		html, err := dataKey.Open(parsed.HTMLBody)
-		if err != nil {
-			internalError(w, r, "decrypting an html body", err)
-			return
-		}
+	if text != "" {
+		message.Text = &text
+	}
+	if html != "" {
 		// This was sanitized before it was ever stored. It is still only safe
 		// inside a sandboxed iframe with no scripting, and the schema says so.
-		body := string(html)
-		message.Html = &body
+		message.Html = &html
 	}
+	message.Extracted = extracted(parsed.Subject, text, html)
 	if parsed.ToAddrs != nil {
 		message.To = parsed.ToAddrs
 	}
@@ -412,6 +484,7 @@ func messageFromSummary(summary apigen.MessageSummary) apigen.Message {
 		State:           apigen.MessageState(summary.State),
 		AttachmentCount: summary.AttachmentCount,
 		Auth:            summary.Auth,
+		Extracted:       summary.Extracted,
 		To:              []string{},
 		Attachments:     []apigen.Attachment{},
 	}

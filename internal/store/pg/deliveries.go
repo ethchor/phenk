@@ -57,6 +57,16 @@ func DeliveryByID(ctx context.Context, q Querier, id core.UUID) (*core.Delivery,
 		`SELECT `+deliveryColumns+` FROM deliveries WHERE id = $1`, id))
 }
 
+// LatestDelivery returns an identity's newest delivery, or ErrNotFound when it
+// has none. It orders by sequence rather than asking for the identity's current
+// sequence number, so it still answers when the newest delivery has been
+// removed and an older one has not.
+func LatestDelivery(ctx context.Context, q Querier, identityID core.UUID) (*core.Delivery, error) {
+	return scanDelivery(q.QueryRow(ctx,
+		`SELECT `+deliveryColumns+`
+		   FROM deliveries WHERE identity_id = $1 ORDER BY seq DESC LIMIT 1`, identityID))
+}
+
 // DeliveriesSince lists an identity's deliveries after a cursor, in sequence
 // order. This is the query behind both the message list and the first half of
 // wait: wait asks it before it subscribes to anything, so a message that

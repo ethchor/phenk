@@ -270,17 +270,54 @@ func TestWaitWakesOnANewMessage(t *testing.T) {
 		done <- result
 	}()
 
-	// Give the waiter time to subscribe, then deliver.
+	// Give the waiter time to subscribe, then deliver and parse, as the SMTP
+	// listener and the worker would.
 	time.Sleep(250 * time.Millisecond)
-	h.deliver(coreUUID(identity.Id), testMessage("just arrived", "body"))
+	delivered := time.Now()
+	h.parseDelivered(h.deliver(coreUUID(identity.Id), testMessage("just arrived", "body")))
 
 	select {
 	case result := <-done:
 		if result.TimedOut || len(result.Messages) != 1 {
 			t.Fatalf("wait returned %+v", result)
 		}
+		if result.Messages[0].State != apigen.MessageSummaryStateParsed {
+			t.Errorf("state = %q, want parsed", result.Messages[0].State)
+		}
+		// Waking is the point. A wait that only answered at its deadline
+		// would also pass the checks above.
+		if elapsed := time.Since(delivered); elapsed > 3*time.Second {
+			t.Errorf("wait answered %v after delivery, want promptly", elapsed)
+		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("wait never woke for a delivered message")
+	}
+}
+
+func TestWaitAnswersEvenWhenParsingStalls(t *testing.T) {
+	// A wait that has mail always answers with it. If the parse worker is
+	// down the message comes back unparsed at the end of the grace period —
+	// not held to the full timeout, and never reported as a timeout.
+	h := newHarness(t, func(c *Config) { c.ParseGrace = 300 * time.Millisecond })
+	c := h.client()
+
+	var identity apigen.Identity
+	c.decode(c.do(http.MethodPost, "/v1/identities", nil), http.StatusCreated, &identity)
+	h.deliver(coreUUID(identity.Id), testMessage("never parsed", "body"))
+
+	started := time.Now()
+	var result apigen.WaitResult
+	c.decode(c.do(http.MethodGet, "/v1/identities/"+identity.Id.String()+"/wait?timeout=5", nil),
+		http.StatusOK, &result)
+
+	if result.TimedOut || len(result.Messages) != 1 {
+		t.Fatalf("wait returned %+v, want the one message", result)
+	}
+	if result.Messages[0].State != apigen.MessageSummaryStateReceived {
+		t.Errorf("state = %q, want received", result.Messages[0].State)
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Errorf("wait held an unparseable message for %v, want about the grace period", elapsed)
 	}
 }
 
@@ -332,7 +369,7 @@ func TestManyConcurrentWaitersAllReceiveTheMessage(t *testing.T) {
 	ready.Wait()
 	time.Sleep(500 * time.Millisecond)
 
-	h.deliver(coreUUID(identity.Id), testMessage("broadcast", "one message, fifty readers"))
+	h.parseDelivered(h.deliver(coreUUID(identity.Id), testMessage("broadcast", "one message, fifty readers")))
 
 	deadline := time.After(30 * time.Second)
 	for i := 0; i < waiters; i++ {
